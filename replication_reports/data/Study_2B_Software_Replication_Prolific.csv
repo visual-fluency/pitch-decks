@@ -1,0 +1,297 @@
+Types of investment,Age,Sex,Ethnicity simplified,Country of residence,Nationality,Employment status,ID
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",24,Male,Mixed,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",2
+NA,NA,NA,NA,NA,NA,NA,1
+"Government Bonds, Crowdfunding",39,Female,White,United Kingdom,United Kingdom,Full-Time,8
+"Stock Market, Crowdfunding, Other",33,Male,White,France,France,Full-Time,3
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding, Angel syndicate",41,Male,White,Canada,Canada,Part-Time,4
+"Crowdfunding, Other",31,Male,White,United Kingdom,United Kingdom,Full-Time,5
+"Stock Market, Unit trusts, Private Equity fund",64,Female,White,United Kingdom,United Kingdom,Full-Time,7
+"Stock Market, Crowdfunding",65,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",19
+NA,NA,NA,NA,NA,NA,NA,6
+"ETF or ETC, Stock Market, Private Equity fund, Venture Capital fund",27,Male,White,United Kingdom,United Kingdom,Full-Time,16
+"Venture Capital fund, Private Equity fund, Stock Market",36,Male,White,United Kingdom,United Kingdom,NA,9
+"ETF or ETC, Crowdfunding, Stock Market",36,Male,White,United Kingdom,United Kingdom,Full-Time,11
+"Stock Market, Crowdfunding",39,Male,Black,United Kingdom,United Kingdom,NA,10
+"Stock Market, Private Equity fund",63,Male,White,United Kingdom,United Kingdom,Part-Time,15
+"ETF or ETC, Crowdfunding",24,Male,White,United Kingdom,United Kingdom,Full-Time,12
+NA,NA,NA,NA,NA,NA,NA,43
+"Stock Market, Private Equity fund, Crowdfunding",52,Female,White,United Kingdom,United Kingdom,Full-Time,13
+"Government Bonds, Stock Market, Unit trusts, Angel syndicate, Options, Private Equity fund, Venture Capital fund, ETF or ETC",55,Male,White,United Kingdom,United Kingdom,Full-Time,14
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund, Crowdfunding, Venture Capital fund",26,Male,White,United Kingdom,United Kingdom,Full-Time,17
+"Stock Market, Crowdfunding",45,Male,White,United Kingdom,United Kingdom,NA,18
+"Private Equity fund, Stock Market",68,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",20
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding",66,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",23
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding",41,Male,Other,Canada,Canada,NA,36
+"ETF or ETC, Stock Market, Crowdfunding",39,Female,White,United Kingdom,Poland,Full-Time,24
+"Stock Market, Crowdfunding, ETF or ETC",28,Male,Asian,United Kingdom,United Kingdom,Full-Time,21
+"Stock Market, Unit trusts, Crowdfunding",66,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",22
+"Stock Market, Crowdfunding",51,Female,White,United Kingdom,United Kingdom,NA,25
+"Stock Market, Unit trusts, Crowdfunding",69,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",38
+"Stock Market, Unit trusts, Options, Government Bonds, Crowdfunding",38,Male,White,United Kingdom,United Kingdom,NA,29
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Options, Private Equity fund",39,Male,White,United Kingdom,United Kingdom,Full-Time,26
+"ETF or ETC, Stock Market, Unit trusts, Crowdfunding",34,Female,Asian,United Kingdom,Singapore,Full-Time,28
+"Stock Market, Unit trusts, Private Equity fund",64,Male,White,United Kingdom,United Kingdom,Full-Time,31
+"Stock Market, Crowdfunding, Government Bonds",39,Male,White,United Kingdom,United Kingdom,Full-Time,32
+"ETF or ETC, Stock Market, Unit trusts, Crowdfunding",34,Male,White,United Kingdom,United Kingdom,Full-Time,30
+"Crowdfunding, Stock Market",22,Male,White,United Kingdom,United Kingdom,Part-Time,27
+Crowdfunding,50,Male,Other,United States,United States,Full-Time,37
+Crowdfunding,36,Male,White,United Kingdom,United Kingdom,Full-Time,34
+"ETF or ETC, Government Bonds, Stock Market, Venture Capital fund, Private Equity fund, Crowdfunding",25,Male,White,United Kingdom,United Kingdom,NA,56
+"Unit trusts, Crowdfunding, Other",58,Male,White,United Kingdom,United Kingdom,NA,42
+"Government Bonds, Stock Market, Unit trusts, Private Equity fund",64,Female,White,United Kingdom,United Kingdom,Part-Time,44
+"Stock Market, Crowdfunding",28,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",33
+"ETF or ETC, Stock Market, Unit trusts, Crowdfunding",52,Female,White,United Kingdom,United Kingdom,Full-Time,41
+"Stock Market, Crowdfunding",23,Male,White,United Kingdom,Bulgaria,Part-Time,49
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund",29,Female,Asian,United States,China,Full-Time,35
+NA,NA,NA,NA,NA,NA,NA,39
+"Stock Market, Unit trusts, Crowdfunding",68,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",55
+"Stock Market, Crowdfunding",41,Female,Black,United Kingdom,United Kingdom,Full-Time,52
+"ETF or ETC, Crowdfunding, Other",37,Male,White,United Kingdom,Italy,Full-Time,40
+"Stock Market, Private Equity fund",53,Female,White,United Kingdom,United Kingdom,Part-Time,54
+"Government Bonds, Stock Market, Unit trusts, Private Equity fund, Venture Capital fund, Other",65,Male,White,United Kingdom,United Kingdom,Full-Time,47
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Private Equity fund",47,Male,White,United Kingdom,United Kingdom,Full-Time,48
+"Government Bonds, Stock Market, Unit trusts, Options, Crowdfunding, Other",51,Male,White,United Kingdom,United Kingdom,Full-Time,58
+"Private Equity fund, Crowdfunding, Stock Market, Government Bonds",57,Female,White,United Kingdom,United Kingdom,Full-Time,51
+"Government Bonds, Stock Market, ETF or ETC, Private Equity fund",30,Male,White,United Kingdom,United Kingdom,Full-Time,50
+"ETF or ETC, Crowdfunding",36,Female,White,Canada,Canada,Part-Time,46
+"Stock Market, Crowdfunding",68,Male,White,United Kingdom,United Kingdom,Part-Time,60
+Crowdfunding,66,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",63
+"Crowdfunding, Private Equity fund, Stock Market, ETF or ETC",NA,Female,Mixed,United Kingdom,United Kingdom,Full-Time,82
+"Government Bonds, Stock Market, Private Equity fund",41,Female,White,United Kingdom,United Kingdom,Full-Time,45
+"Stock Market, Options, Private Equity fund",25,Male,White,United Kingdom,United Kingdom,Full-Time,57
+"Other, Crowdfunding",28,Female,White,United Kingdom,United Kingdom,Part-Time,53
+"ETF or ETC, Stock Market, Crowdfunding",30,Male,White,United Kingdom,United Kingdom,Full-Time,61
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",31,Male,Asian,Germany,United Kingdom,Full-Time,66
+"ETF or ETC, Options, Private Equity fund, Crowdfunding",46,Male,White,United Kingdom,United Kingdom,Full-Time,76
+Crowdfunding,38,Female,White,United Kingdom,Ireland,Part-Time,59
+"ETF or ETC, Stock Market, Crowdfunding, Unit trusts",44,Male,White,United Kingdom,United Kingdom,Full-Time,77
+"ETF or ETC, Stock Market, Unit trusts, Private Equity fund, Other",51,Male,White,United Kingdom,United Kingdom,Part-Time,64
+"Stock Market, Private Equity fund",56,Male,White,United Kingdom,United Kingdom,Full-Time,62
+"Stock Market, Crowdfunding, Government Bonds",48,Male,White,United States,United States,NA,69
+"Stock Market, ETF or ETC, Government Bonds, Crowdfunding",28,Female,White,Canada,Canada,NA,67
+"Stock Market, Crowdfunding",31,Male,White,United Kingdom,United Kingdom,Full-Time,68
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund",29,Male,Asian,United Kingdom,United Kingdom,Full-Time,65
+"ETF or ETC, Stock Market, Crowdfunding",29,Female,White,Germany,Germany,NA,74
+"Stock Market, Options, Crowdfunding, Venture Capital fund",42,Male,Other,United Kingdom,United Kingdom,Full-Time,86
+"Stock Market, Crowdfunding, ETF or ETC",33,Male,Mixed,United Kingdom,United Kingdom,Full-Time,72
+"Stock Market, Crowdfunding, ETF or ETC, Government Bonds",30,Female,White,United Kingdom,Romania,NA,85
+"Stock Market, Unit trusts, Crowdfunding",45,Female,White,United Kingdom,United Kingdom,Full-Time,71
+"Crowdfunding, Stock Market",33,Female,White,United Kingdom,United Kingdom,Part-Time,70
+"Stock Market, Government Bonds, Private Equity fund",28,Male,Black,United Kingdom,Nigeria,NA,73
+"Stock Market, Crowdfunding",42,Male,White,United Kingdom,United Kingdom,Full-Time,75
+"Stock Market, Crowdfunding",32,Male,White,Germany,Germany,NA,79
+"ETF or ETC, Government Bonds, Crowdfunding",31,Female,White,United Kingdom,United Kingdom,Full-Time,81
+"Stock Market, Crowdfunding, Other",30,Male,Black,United Kingdom,United Kingdom,Other,118
+Crowdfunding,33,Female,White,France,Spain,NA,78
+"Unit trusts, Stock Market, Crowdfunding",65,Male,White,United Kingdom,United Kingdom,Part-Time,92
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding, Other, Venture Capital fund, Options",24,Male,White,United Kingdom,United Kingdom,Full-Time,83
+"Stock Market, Private Equity fund, Crowdfunding",24,Male,White,France,Germany,Part-Time,84
+"Stock Market, Crowdfunding",59,Female,White,United Kingdom,United Kingdom,Full-Time,87
+"Stock Market, Government Bonds, Crowdfunding",34,Male,White,United Kingdom,United Kingdom,Full-Time,80
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",57,Male,Black,United States,United States,Other,93
+"Government Bonds, Stock Market, Private Equity fund",25,Male,White,United Kingdom,United Kingdom,Full-Time,100
+"Stock Market, ETF or ETC, Government Bonds, Crowdfunding, Venture Capital fund, Private Equity fund, Angel syndicate, Unit trusts",33,Male,Black,United Kingdom,Nigeria,Full-Time,91
+"Stock Market, Crowdfunding",51,Female,White,United Kingdom,United Kingdom,Part-Time,89
+"ETF or ETC, Stock Market, Crowdfunding, Options",39,Male,Asian,Canada,Canada,Full-Time,90
+Crowdfunding,59,Female,White,United Kingdom,United Kingdom,NA,95
+"Stock Market, Crowdfunding",41,Male,White,United Kingdom,United Kingdom,Full-Time,125
+"ETF or ETC, Stock Market, Government Bonds, Crowdfunding",36,Male,White,United States,United States,Full-Time,88
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Private Equity fund, Venture Capital fund, Crowdfunding",30,Male,White,United Kingdom,United Kingdom,NA,98
+Crowdfunding,55,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",94
+"Stock Market, Government Bonds, Crowdfunding",33,Female,White,United Kingdom,United Kingdom,NA,96
+"ETF or ETC, Stock Market, Crowdfunding, Venture Capital fund",26,Male,White,United Kingdom,United Kingdom,Full-Time,99
+Crowdfunding,45,Male,White,United Kingdom,United Kingdom,Full-Time,97
+"Private Equity fund, Crowdfunding, Government Bonds, Stock Market",42,Male,White,United Kingdom,United Kingdom,Full-Time,112
+"ETF or ETC, Government Bonds, Stock Market, Options, Private Equity fund, Crowdfunding",34,Female,Asian,United Kingdom,United Kingdom,Full-Time,105
+"Government Bonds, Stock Market, Crowdfunding",33,Male,White,United Kingdom,United Kingdom,NA,108
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Options, Private Equity fund",49,Male,Asian,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",101
+"ETF or ETC, Private Equity fund, Stock Market",38,Male,White,United Kingdom,United Kingdom,Full-Time,137
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding",23,Male,White,United Kingdom,United Kingdom,Full-Time,103
+"Government Bonds, Crowdfunding",26,Female,White,United Kingdom,United Kingdom,Full-Time,109
+"Stock Market, Crowdfunding, Other",45,Male,Asian,United Kingdom,United Kingdom,Full-Time,104
+"Stock Market, Crowdfunding",51,Male,White,United Kingdom,United Kingdom,Full-Time,106
+"Government Bonds, Stock Market, Private Equity fund",32,Female,White,United Kingdom,United Kingdom,Full-Time,102
+"Government Bonds, Stock Market, Crowdfunding",37,Female,White,United Kingdom,United Kingdom,Full-Time,113
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",53,Male,White,United States,United States,Full-Time,111
+"Stock Market, Unit trusts, ETF or ETC, Government Bonds, Crowdfunding, Angel syndicate",22,Male,Asian,United Kingdom,United Kingdom,Part-Time,107
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Private Equity fund, Venture Capital fund, Crowdfunding, Other",47,Female,Asian,United Kingdom,United Kingdom,Full-Time,117
+"Stock Market, Government Bonds, ETF or ETC, Venture Capital fund, Crowdfunding, Private Equity fund",42,Male,Mixed,Germany,Germany,Full-Time,114
+"Government Bonds, Crowdfunding",47,Male,White,United Kingdom,United Kingdom,Full-Time,116
+NA,NA,NA,NA,NA,NA,NA,110
+Crowdfunding,36,Male,White,United Kingdom,United Kingdom,Full-Time,129
+NA,NA,NA,NA,NA,NA,NA,115
+"ETF or ETC, Government Bonds, Stock Market, Options, Crowdfunding",38,Male,White,United States,France,NA,123
+"ETF or ETC, Stock Market, Crowdfunding",35,Male,White,United Kingdom,United Kingdom,Full-Time,119
+"ETF or ETC, Stock Market, Crowdfunding",24,Male,White,United Kingdom,United Kingdom,Full-Time,132
+Crowdfunding,35,Male,White,Canada,Canada,Full-Time,120
+"Stock Market, Venture Capital fund, Private Equity fund, Crowdfunding",35,Male,Mixed,United Kingdom,United Kingdom,Full-Time,121
+Crowdfunding,40,Female,Asian,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",130
+"Stock Market, Government Bonds, Crowdfunding",46,Female,White,United Kingdom,United Kingdom,Full-Time,127
+Crowdfunding,27,Female,Asian,United Kingdom,United Kingdom,Part-Time,122
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Private Equity fund, Venture Capital fund, Crowdfunding",37,Male,Other,United States,NA,NA,124
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding, Unit trusts",39,Male,Asian,United Kingdom,Australia,Full-Time,138
+"ETF or ETC, Government Bonds, Stock Market, Options, Crowdfunding",39,Male,White,Germany,Germany,Full-Time,128
+"ETF or ETC, Government Bonds, Stock Market, Options, Private Equity fund, Venture Capital fund, Crowdfunding",46,Female,White,United States,United States,Full-Time,126
+"Government Bonds, Stock Market, Private Equity fund, Crowdfunding",50,Male,White,United States,United States,Full-Time,131
+"ETF or ETC, Crowdfunding",35,Male,White,United Kingdom,United Kingdom,Full-Time,144
+"ETF or ETC, Government Bonds, Stock Market, Options, Private Equity fund, Venture Capital fund",33,Male,White,United States,United States,Full-Time,136
+"Government Bonds, Stock Market, Unit trusts, Crowdfunding",54,Male,White,United Kingdom,United Kingdom,Full-Time,135
+"ETF or ETC, Stock Market, Unit trusts, Crowdfunding",58,Male,White,United Kingdom,United Kingdom,Part-Time,133
+"ETF or ETC, Stock Market, Private Equity fund",26,Male,Other,Israel,Israel,Part-Time,139
+"ETF or ETC, Stock Market, Private Equity fund, Unit trusts",32,Male,White,United Kingdom,United Kingdom,Part-Time,143
+"Stock Market, Private Equity fund, Crowdfunding",25,Female,White,United Kingdom,United Kingdom,Full-Time,140
+"Government Bonds, Stock Market, Private Equity fund, Crowdfunding, Venture Capital fund",42,Male,White,United Kingdom,United Kingdom,Full-Time,145
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund",26,Male,White,United Kingdom,Portugal,Full-Time,142
+"Government Bonds, ETF or ETC, Crowdfunding",33,Female,White,United States,United States,NA,141
+"Stock Market, Government Bonds, Options, Venture Capital fund, Private Equity fund, Crowdfunding, Other",33,Male,White,United States,United States,Full-Time,152
+"Crowdfunding, Stock Market, Other",26,Male,Asian,United Kingdom,United Kingdom,Full-Time,147
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund",45,Female,White,Canada,Canada,"Not in paid work (e.g. homemaker', 'retired or disabled)",149
+"Stock Market, Crowdfunding",32,Male,Mixed,United Kingdom,United Kingdom,Full-Time,146
+Angel syndicate,34,Male,White,United States,United States,Part-Time,187
+"Government Bonds, Stock Market, Unit trusts, Private Equity fund",61,Male,White,United Kingdom,United Kingdom,Full-Time,153
+Crowdfunding,29,Male,Black,United Kingdom,Nigeria,Part-Time,148
+"Stock Market, Crowdfunding",42,Male,White,United Kingdom,United Kingdom,Full-Time,154
+"Crowdfunding, Stock Market",47,Male,White,United States,United States,Full-Time,155
+"Stock Market, Crowdfunding, ETF or ETC, Government Bonds",24,Male,Asian,United Kingdom,United Kingdom,Full-Time,151
+"Stock Market, Government Bonds, Crowdfunding",59,Female,White,United States,United States,NA,156
+"Stock Market, Crowdfunding, Unit trusts",42,Male,White,United Kingdom,United Kingdom,NA,159
+"Stock Market, ETF or ETC, Government Bonds, Private Equity fund, Venture Capital fund, Crowdfunding",24,Female,White,United States,United States,Full-Time,150
+"ETF or ETC, Government Bonds, Options, Crowdfunding, Venture Capital fund",34,Male,White,United States,United States,NA,172
+NA,NA,NA,NA,NA,NA,NA,158
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund, Venture Capital fund, Crowdfunding",27,Male,Black,United Kingdom,United Kingdom,Full-Time,192
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Angel syndicate, Options, Private Equity fund, Crowdfunding, Other",31,Male,White,Germany,Germany,Full-Time,165
+"Stock Market, Crowdfunding",56,Female,White,United Kingdom,United Kingdom,NA,167
+"Government Bonds, ETF or ETC, Unit trusts, Options, Private Equity fund",38,Male,White,United States,United States,NA,207
+"Stock Market, Government Bonds, Private Equity fund, Venture Capital fund, Crowdfunding",30,Female,Black,United Kingdom,United Kingdom,Part-Time,164
+"Stock Market, ETF or ETC, Government Bonds, Venture Capital fund",27,Male,White,United Kingdom,United Kingdom,Full-Time,157
+Crowdfunding,23,Male,White,United Kingdom,United Kingdom,NA,160
+"Government Bonds, Crowdfunding",61,Female,White,United Kingdom,United Kingdom,Full-Time,170
+"Stock Market, Crowdfunding",26,Male,Black,United States,United States,Full-Time,171
+"Private Equity fund, Unit trusts, Stock Market, Government Bonds",26,Female,White,United Kingdom,United Kingdom,Full-Time,168
+"Government Bonds, Stock Market, Crowdfunding",31,Male,White,United Kingdom,Ireland,NA,163
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",65,Male,White,United States,United States,NA,177
+"Private Equity fund, ETF or ETC",31,Male,Black,United Kingdom,United Kingdom,Full-Time,184
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding, Other",42,Male,White,United Kingdom,United Kingdom,Full-Time,173
+Crowdfunding,45,Female,Mixed,United States,United States,"Not in paid work (e.g. homemaker', 'retired or disabled)",174
+"ETF or ETC, Stock Market, Crowdfunding, Other",36,Male,White,United States,Spain,Full-Time,179
+"ETF or ETC, Government Bonds, Stock Market, Options, Crowdfunding",27,Male,White,United States,United States,Full-Time,166
+"ETF or ETC, Stock Market, Private Equity fund",27,Female,White,United Kingdom,United Kingdom,Full-Time,169
+"Government Bonds, Stock Market, Options, Venture Capital fund, Private Equity fund, Crowdfunding",52,Male,White,United States,United States,NA,178
+"Stock Market, Crowdfunding",33,Male,White,United Kingdom,United Kingdom,Full-Time,175
+"ETF or ETC, Stock Market, Unit trusts, Private Equity fund",53,Male,White,United States,United Kingdom,Full-Time,176
+"ETF or ETC, Government Bonds, Stock Market, Options, Crowdfunding",70,Male,White,United States,United States,NA,186
+"Stock Market, Government Bonds, Private Equity fund",34,Male,White,United States,United States,Full-Time,195
+"ETF or ETC, Crowdfunding, Options, Stock Market",44,Male,White,United Kingdom,United Kingdom,Other,181
+Crowdfunding,56,Male,White,United States,United States,Full-Time,191
+"ETF or ETC, Stock Market, Unit trusts, Options, Other, Crowdfunding, Government Bonds",47,Male,White,United States,United States,Part-Time,194
+"ETF or ETC, Stock Market, Private Equity fund",34,Male,White,United Kingdom,United Kingdom,NA,188
+"Crowdfunding, Stock Market, Government Bonds, Other",29,Female,Mixed,United Kingdom,United Kingdom,Part-Time,185
+"Stock Market, Private Equity fund",34,Female,White,United Kingdom,United Kingdom,Full-Time,190
+"Stock Market, Private Equity fund",45,Male,White,United States,United States,Full-Time,180
+"Stock Market, Crowdfunding, Venture Capital fund, Private Equity fund",26,Female,White,United Kingdom,United Kingdom,Full-Time,189
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Angel syndicate, Options, Private Equity fund, Venture Capital fund, Crowdfunding",39,Female,White,United Kingdom,United Kingdom,Full-Time,246
+NA,NA,NA,NA,NA,NA,NA,183
+"Crowdfunding, Government Bonds",71,Male,White,United States,United States,"Not in paid work (e.g. homemaker', 'retired or disabled)",199
+"Stock Market, Unit trusts, Private Equity fund, Venture Capital fund",61,Male,White,United Kingdom,United Kingdom,Full-Time,197
+"ETF or ETC, Crowdfunding",33,Male,White,Germany,Germany,Full-Time,219
+"ETF or ETC, Stock Market, Crowdfunding",26,Male,White,Germany,Germany,Part-Time,193
+"Government Bonds, Stock Market, Crowdfunding",67,Female,White,United States,United States,"Not in paid work (e.g. homemaker', 'retired or disabled)",196
+"Stock Market, Government Bonds, Venture Capital fund",27,Female,Other,Canada,Canada,Other,198
+"Stock Market, Crowdfunding",52,Female,White,United Kingdom,Italy,Full-Time,218
+"ETF or ETC, Stock Market, Crowdfunding, Other",41,Male,White,United States,United States,NA,230
+"Stock Market, Crowdfunding",26,Male,Asian,United States,United States,Full-Time,252
+"Stock Market, Crowdfunding",33,Male,White,United Kingdom,United Kingdom,Full-Time,204
+"Crowdfunding, Stock Market",30,Female,White,United Kingdom,United Kingdom,Full-Time,202
+Crowdfunding,31,Female,White,United States,United States,Part-Time,200
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding, Other",37,Male,White,United States,United States,Part-Time,214
+"Stock Market, Government Bonds, Options, Private Equity fund, Crowdfunding, Other",35,Male,White,United Kingdom,United Kingdom,Full-Time,203
+"ETF or ETC, Stock Market, Crowdfunding, Options, Government Bonds",37,Female,White,Germany,Germany,Part-Time,225
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",49,Male,Asian,United States,United States,Full-Time,201
+"ETF or ETC, Stock Market, Options, Crowdfunding, Other",33,Female,Asian,United States,United States,Full-Time,215
+"Stock Market, Crowdfunding",31,Male,White,United Kingdom,United Kingdom,Full-Time,208
+"Stock Market, Crowdfunding, Private Equity fund, Unit trusts",62,Female,White,United Kingdom,United Kingdom,Full-Time,212
+NA,NA,NA,NA,NA,NA,NA,240
+"Stock Market, Crowdfunding, ETF or ETC",67,Female,White,United States,United States,Full-Time,213
+Crowdfunding,55,Male,White,United Kingdom,United Kingdom,Full-Time,206
+"ETF or ETC, Stock Market, Government Bonds, Crowdfunding",34,Male,Asian,Canada,India,Full-Time,205
+"ETF or ETC, Options, Stock Market, Crowdfunding",45,Male,White,United States,United States,Full-Time,223
+"Stock Market, ETF or ETC, Crowdfunding",33,Male,White,Germany,Germany,Full-Time,209
+"Government Bonds, Stock Market, Unit trusts, Angel syndicate, Private Equity fund, Venture Capital fund, Crowdfunding",57,Male,White,United Kingdom,United Kingdom,Full-Time,220
+"Stock Market, Crowdfunding, Private Equity fund",46,Female,White,United States,United States,Part-Time,210
+"Stock Market, Venture Capital fund",28,Male,White,United States,Germany,Full-Time,226
+NA,NA,NA,NA,NA,NA,NA,211
+"ETF or ETC, Stock Market, Unit trusts, Private Equity fund, Government Bonds",60,Male,White,United Kingdom,United Kingdom,Full-Time,217
+"Stock Market, Government Bonds, Crowdfunding, Other",69,Female,White,United Kingdom,United Kingdom,Part-Time,235
+"ETF or ETC, Stock Market, Crowdfunding",37,Male,White,Germany,Germany,NA,232
+"Stock Market, Crowdfunding",33,Male,White,United Kingdom,United Kingdom,Full-Time,231
+"ETF or ETC, Stock Market, Options, Crowdfunding, Unit trusts, Government Bonds",32,Male,White,United States,United States,Part-Time,222
+"ETF or ETC, Crowdfunding",40,Female,White,United States,United States,Part-Time,229
+"Stock Market, Crowdfunding",21,Male,White,United States,United States,Full-Time,216
+"Stock Market, Crowdfunding, Government Bonds",33,Male,White,United States,United States,NA,221
+"ETF or ETC, Stock Market, Crowdfunding",31,Female,Asian,Canada,India,Full-Time,224
+"Stock Market, Crowdfunding",55,Male,White,United Kingdom,United Kingdom,Full-Time,234
+"Government Bonds, Stock Market, Private Equity fund",40,Male,White,United Kingdom,United Kingdom,Full-Time,233
+"ETF or ETC, Stock Market, Options, Crowdfunding",37,Male,White,United States,United States,Full-Time,247
+"Stock Market, Crowdfunding",26,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",227
+"Stock Market, Crowdfunding",32,Male,White,United States,United States,Full-Time,228
+"Government Bonds, Stock Market, Crowdfunding",39,Female,White,United Kingdom,United Kingdom,Full-Time,237
+"Stock Market, Private Equity fund",30,Female,White,United Kingdom,United Kingdom,NA,245
+"Stock Market, ETF or ETC, Crowdfunding, Other",31,Male,Mixed,United States,United States,NA,239
+"Stock Market, Crowdfunding",22,Female,White,United Kingdom,United Kingdom,Full-Time,236
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",40,Male,White,United Kingdom,United Kingdom,Full-Time,242
+Crowdfunding,43,Male,White,United Kingdom,United Kingdom,Full-Time,244
+"Stock Market, Crowdfunding, Other",63,Female,White,United States,United States,Full-Time,254
+"Private Equity fund, ETF or ETC, Stock Market, Government Bonds",26,Male,White,United States,United States,NA,241
+"Stock Market, Crowdfunding",58,Female,White,United States,United States,Full-Time,250
+"Crowdfunding, Stock Market",34,Male,White,United States,United States,Full-Time,253
+"ETF or ETC, Government Bonds, Stock Market, Options, Crowdfunding, Other",38,Male,White,United States,United States,Full-Time,243
+"Crowdfunding, Stock Market, Government Bonds, Other",45,Male,White,United Kingdom,United Kingdom,Other,275
+"Crowdfunding, Stock Market",36,Female,White,United Kingdom,United Kingdom,Part-Time,248
+"ETF or ETC, Stock Market, Crowdfunding",36,Male,White,United States,United States,Full-Time,249
+"Stock Market, Government Bonds, ETF or ETC, Crowdfunding",31,Male,White,United States,United States,Full-Time,295
+"Government Bonds, ETF or ETC, Stock Market, Private Equity fund",32,Male,White,France,France,Full-Time,262
+"Government Bonds, Stock Market, Unit trusts, Private Equity fund",67,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",264
+"ETF or ETC, Government Bonds, Stock Market, Private Equity fund, Crowdfunding",34,Male,White,United Kingdom,United Kingdom,Full-Time,260
+NA,NA,NA,NA,NA,NA,NA,251
+Private Equity fund,53,Female,White,United Kingdom,United Kingdom,Part-Time,257
+"ETF or ETC, Stock Market, Unit trusts, Crowdfunding",29,Male,White,Canada,Canada,Full-Time,256
+"Stock Market, Crowdfunding",37,Male,White,United States,United States,Part-Time,267
+"Government Bonds, Stock Market, Options, Crowdfunding, Venture Capital fund, Private Equity fund",56,Male,White,United States,United States,Full-Time,261
+"Government Bonds, Stock Market, Venture Capital fund, Crowdfunding, ETF or ETC",54,Male,Black,United States,United States,NA,266
+"ETF or ETC, Stock Market, Options, Crowdfunding, Government Bonds",22,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",259
+"Crowdfunding, Stock Market",42,Female,White,United States,United States,NA,258
+"Government Bonds, Stock Market, Crowdfunding, Private Equity fund, Venture Capital fund",45,Male,Other,Canada,Canada,Full-Time,269
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",32,Male,White,United States,United States,Full-Time,263
+"ETF or ETC, Stock Market, Options, Crowdfunding",42,Male,Mixed,United States,United States,Full-Time,271
+"Stock Market, Unit trusts, Crowdfunding",64,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",268
+"ETF or ETC, Stock Market, Options, Crowdfunding",34,Male,Asian,Canada,Canada,Full-Time,265
+"Private Equity fund, Crowdfunding",47,Female,White,United States,United States,NA,273
+"Options, Stock Market, ETF or ETC, Crowdfunding, Venture Capital fund",29,Male,Black,United States,United States,NA,276
+"Government Bonds, Stock Market, Options, Crowdfunding",32,Male,White,United States,United States,Full-Time,277
+"Government Bonds, Crowdfunding",40,Male,White,United Kingdom,United Kingdom,Full-Time,281
+"Stock Market, Private Equity fund",23,Male,Other,Germany,Turkey,Part-Time,270
+"ETF or ETC, Stock Market, Crowdfunding, Options",26,Male,Asian,Canada,Canada,Full-Time,283
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",30,Male,White,United Kingdom,Belgium,Part-Time,280
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",53,Male,White,Germany,Germany,Full-Time,272
+"Stock Market, Unit trusts, Crowdfunding",53,Female,Black,United Kingdom,United Kingdom,Full-Time,279
+"ETF or ETC, Government Bonds, Stock Market, Options, Private Equity fund, Crowdfunding",37,Female,White,United Kingdom,United Kingdom,NA,274
+"Crowdfunding, Stock Market, Government Bonds",26,Female,White,United Kingdom,United Kingdom,Full-Time,278
+"Stock Market, Crowdfunding, Private Equity fund",35,Male,White,United Kingdom,United Kingdom,Unemployed (and job seeking),282
+Crowdfunding,40,Female,White,United States,United States,"Not in paid work (e.g. homemaker', 'retired or disabled)",290
+"ETF or ETC, Government Bonds, Stock Market, Crowdfunding",25,Male,White,United Kingdom,United Kingdom,NA,287
+"Stock Market, Government Bonds, Private Equity fund, Other",55,Female,White,United States,United States,Other,286
+"Crowdfunding, ETF or ETC, Stock Market",33,Female,Asian,United Kingdom,United States,Due to start a new job within the next month,289
+"Government Bonds, Stock Market, Crowdfunding, Venture Capital fund",28,Male,White,United States,United States,Full-Time,288
+"Stock Market, Crowdfunding, Other",39,Female,White,United States,United States,Part-Time,294
+"ETF or ETC, Stock Market, Crowdfunding",37,Male,White,United States,United States,Full-Time,291
+"Options, Crowdfunding",42,Male,White,United Kingdom,United Kingdom,Full-Time,298
+"Stock Market, Government Bonds, Crowdfunding, Other",38,Male,White,United States,United States,Full-Time,300
+"ETF or ETC, Stock Market, Crowdfunding",35,Male,Mixed,United States,United States,NA,302
+"ETF or ETC, Stock Market, Options, Crowdfunding, Other",28,Male,White,Germany,Germany,Full-Time,303
+"Stock Market, Options, Crowdfunding",49,Male,White,United States,United States,Full-Time,308
+"Stock Market, Crowdfunding, Private Equity fund, Government Bonds, ETF or ETC",42,Male,White,United States,United States,NA,310
+"ETF or ETC, Stock Market, Crowdfunding",30,Male,White,United Kingdom,Poland,Full-Time,313
+"Government Bonds, Stock Market, Crowdfunding",41,Male,White,United States,United States,Part-Time,309
+"ETF or ETC, Government Bonds, Stock Market, Unit trusts, Crowdfunding",61,Male,White,United Kingdom,United Kingdom,Full-Time,311
+"Stock Market, Crowdfunding, Government Bonds",47,Female,Mixed,United States,United States,Full-Time,312
+Crowdfunding,24,Male,White,United States,United States,Unemployed (and job seeking),315
