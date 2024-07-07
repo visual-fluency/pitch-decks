@@ -6,8 +6,9 @@ website:
   title: "Pitch Decks"
   navbar:
     left:
-      - href: index.qmd
+      - icon: house-door-fill
         text: Home
+        href: index.qmd
       - href: replication_reports/Replication_Report_1_MCs.qmd
         text: Manipulation Checks
       - href: replication_reports/Replication_Report_2_Field_Experiment.qmd
