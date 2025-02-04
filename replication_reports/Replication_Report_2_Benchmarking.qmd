@@ -1,0 +1,218 @@
+---
+title: "Benchmarking Study"
+subtitle: "Replication Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    code-fold: true
+    code-tools: false
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+---
+
+<!--
+# Last update: 04-02-2025
+# Author: <blinded for review>
+-->
+
+# Introduction
+
+To ensure that our experimental pitch decks appeared realistic and ecologically valid in terms of design and fluency, we benchmarked their visual fluency against 3,510 real pitch decks submitted to a European venture capital firm specializing in seed-stage investments. Importantly, since these real pitch decks include both successful and unsuccessful funding attempts, this approach mitigates the survivorship bias inherent in publicly available pitch decks, which are typically limited to successful cases and may overrepresent higher visual fluency.
+
+In what follows, we will shortly describe the results of the benchmarking study. As this report is dynamically created with R and Quarto, we also report all code. However, for the sake of readability, the code itself is folded by default and only the results relevant for the questions at hand are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+# setup
+library(ggplot2)
+library(kableExtra)
+library(rlang) # enables `%||%` (default value for NULL)
+
+# further packages that are loaded on demand are:
+# - here
+# - readr
+# - hrbrthemes
+# - scales
+# - stringr
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+
+# -----------------------------------------------------------------------------
+# custom colors and themes
+# -----------------------------------------------------------------------------
+#
+# colors
+theme_colors <- list(
+  percentiles = "black",
+  fill = "grey80",
+  emphasis = "#297FB8",
+  emphasis_text = "black",
+  axis = "black",
+  grid = "grey80"
+)
+
+# custom theme
+custom_theme <- hrbrthemes::theme_ipsum_rc() +
+  theme(
+    panel.grid.major.y = element_line(color = theme_colors$grid),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_blank(),
+    plot.title = element_text(hjust = 0, size = 18, family = "Roboto Condensed", face = "bold"),
+    plot.subtitle = element_text(hjust = 0, size = 14, family = "Roboto Condensed", margin = margin(b = 25)),
+    plot.caption = element_text(hjust = 0.5, family = "Roboto Condensed"),
+    axis.title.x = element_text(size = 12, margin = margin(t = 10, b = 0), hjust = 0.5, color = theme_colors$axis),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10, color = theme_colors$axis),
+    axis.text.y = element_text(size = 10, color = theme_colors$axis),
+    axis.title.y = element_text(size = 12, margin = margin(l = -20, r = 10), hjust = 0.5, color = theme_colors$axis),
+    plot.margin = margin(t = 40, r = 20, b = 40, l = 40, unit = "pt")
+  )
+
+
+# -----------------------------------------------------------------------------
+# custom plot function
+# -----------------------------------------------------------------------------
+#
+# function to create density plot with percentiles and benchmarks
+create_density_plot <- function(
+
+    data,               # data frame with data for all pitch decks
+    metric,             # metric to plot
+    benchmark_values,   # values for benchmarks
+    benchmark_labels,   # labels for benchmarks
+    title = NULL,       # title for the plot
+    save_plot = FALSE   # save the plot as png
+    
+    ) {
+  
+  # calculate density and percentiles
+  metric_density <- density(data[[metric]])
+  metric_percentiles <- quantile(data[[metric]],
+                                 probs = c(0.01, 0.05, 0.10, 0.25, 0.5,
+                                           0.75, 0.9, 0.95, 0.99))
+  
+  # create percentile lines data
+  perc_lines <- data.frame(
+    x = metric_percentiles,
+    y = approx(metric_density$x, metric_density$y, xout = metric_percentiles)$y,
+    label = c("p1", "p5", "p10", "p25", "p50", "p75", "p90", "p95", "p99")
+  )
+  
+  # create benchmark data
+  benchmarks <- data.frame(
+    values = benchmark_values,
+    labels = benchmark_labels
+  )
+  
+  # create plot
+  plot <- ggplot(data, aes(!!sym(metric))) +
+    geom_density(fill = theme_colors$fill, alpha = 0.65, color = "white", linewidth = .65) +
+    geom_segment(data = perc_lines,
+                aes(x = x, xend = x, y = 0, yend = y),
+                color = theme_colors$percentiles, linetype = "dashed") +
+    geom_text(data = perc_lines,
+              aes(x = x, y = 0, label = label),
+              vjust = 1.5, size = 3, color = theme_colors$percentiles, fontface = "italic", family = "Roboto Condensed") +
+    geom_segment(data = benchmarks,
+                aes(x = values, xend = values, y = 0, yend = max(metric_density$y)),
+                color = theme_colors$emphasis, linewidth = 1) +
+    geom_text(data = benchmarks,
+              aes(x = values, y = max(metric_density$y), label = labels),
+              vjust = -1, size = 4, color = theme_colors$emphasis_text, family = "Roboto Condensed") +
+    scale_x_continuous(
+      labels = scales::number_format(accuracy = 0.01),
+      breaks = scales::pretty_breaks(n = 10)
+    ) +
+    custom_theme +
+    labs(
+      title = title %||% paste("Distribution of", stringr::str_to_lower(metric), "scores"),
+      x = paste(stringr::str_to_title(metric), "score"),
+      y = "Density",
+      subtitle = paste(scales::comma(nrow(data)), "pitch decks"),
+      caption = "Note: Dashed lines represent key percentiles. Solid lines represent the average scores of our pitch decks used in the experiments."
+    )
+  
+  # save plot if requested
+  if(save_plot){
+    filename <- paste0("Benchmark_Plot_", stringr::str_to_title(metric), ".png")
+    ggsave(filename, plot, width = 12, height = 8, dpi = 300)
+  }
+  
+  return(plot)
+}
+```
+
+# Data
+
+We provided the VC firm with a script that uses the *imagefluency* package (Mayer, [2024](https://imagefluency.com/)) to compute simplicity, symmetry, and contrast values for all pitch decks in their database. In the present replication report, we load the data we got back from the VC firm.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'replication_reports/data'
+
+pitch_data <- readr::read_csv(here::here(data_dir, 'Pitchdeck_Benchmarks.csv'))
+# no further processing needed
+```
+
+
+# Plots
+
+@fig-benchmark shows the distribution of visual fluency across the VC’s deck database. In particular, @fig-benchmark-1 shows the distribution of visual contrast, @fig-benchmark-2 shows the distribution of visual simplicity, and @fig-benchmark-3 shows the distribution of visual symmetry. In each distribution, we highlight the position of our experimental pitch decks' scores to illustrate how they compare to the overall range. The density is based on the average of the individual slides of the `r scales::comma(nrow(data))` pitch decks, and the scores for the low and high fluency pitch decks are the average per condition.
+ 
+```{r}
+#| label: fig-benchmark
+#| fig-cap: Distribution of contrast, simplicity, and symmetry scores in real pitch decks from a European VC firm and comparison with the scores of the low and high fluency pitch decks from our field experiment. 
+#| fig-subcap: 
+#|   - "Contrast scores"
+#|   - "Simplicity scores"
+#|   - "Symmetry scores"
+#| layout-nrow: 3
+#| fig-width: 12
+#| fig-asp: .75
+#| out-width: 100%
+#| warning: false
+
+# NOTE: below custom plot function is defined at the beginning of this document
+
+# contrast plot
+create_density_plot(
+  data = pitch_data,
+  metric = "contrast",
+  benchmark_values = c(0.118188, 0.189691),
+  benchmark_labels = c("Low Fluency Decks", "High Fluency Decks")
+)
+
+# simplicity plot
+create_density_plot(
+  data = pitch_data,
+  metric = "simplicity",
+  benchmark_values = c(0.874492, 0.930208),
+  benchmark_labels = c("Low Fluency Decks", "High Fluency Decks")
+)
+
+# symmetry plot
+create_density_plot(
+  data = pitch_data,
+  metric = "symmetry",
+  benchmark_values = c(0.157513, 0.542096),
+  benchmark_labels = c("Low Fluency Decks", "High Fluency Decks")
+)
+```
+
+Overall, @fig-benchmark highlights that our experimental low-fluency decks fall close to the 10th percentile of the distributions, while the high-fluency decks are near the 90th percentiles.
+

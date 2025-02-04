@@ -1,0 +1,18 @@
+---
+title: "Replication Reports"
+subtitle: "Judging a Pitch by its Cover"
+---
+
+This companion website presents the replication reports for the paper *Judging a Pitch by its Cover: Evidence on the Roles of Visual Fluency and Substantive Quality in Startup Pitch Decks From Field and Online Experiments*.
+There are five replication reports:
+
+* [VC and BA Survey](replication_reports/Replication_Report_1_Survey.qmd)
+* [Pitch Deck Benchmarking Study](replication_reports/Replication_Report_2_Benchmarking.qmd)
+* [Manipulation Checks](replication_reports/Replication_Report_3_MCs.qmd)
+* [Study 1 (Field Experiment)](replication_reports/Replication_Report_4_Field_Experiment.qmd)
+* [Study 2 (Online Experiments)](replication_reports/Replication_Report_5_Online_Experiments.qmd)
+
+The reports are created from the raw data using R and Quarto, and they reproduce all results, tables, and figures from the paper. For the sake of readability, the code itself is folded by default in the reports and only the results relevant for the questions at hand are shown.
+
+Everything you see on this website is fully reproducible from the project's [GitHub repository](https://github.com/visual-fluency/pitch-decks). 
+In addition, the pre-registrations, detailed materials, data, and code for the entire project are available at the paper's [ResearchBox](https://researchbox.org/1836&PEER_REVIEW_passcode=NKVZFU).

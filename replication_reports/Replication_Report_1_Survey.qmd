@@ -1,0 +1,189 @@
+---
+title: "VC and BA Survey"
+subtitle: "Replication Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    code-fold: true
+    code-tools: false
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+---
+
+<!--
+# Last update: 04-02-2025
+# Author: <blinded for review>
+-->
+
+# Introduction
+
+To investigate investors' perceptions of visual design, we conducted a survey with 188 venture capitalists (VCs) and business angels (BAs). They were first asked to independently assess the importance of content quality and visual design. Subsequently, they were required to directly compare the relative importance of the two factors.
+
+In what follows, we will shortly describe the results of the survey. As this report is dynamically created with R and Quarto, we also report all code. However, for the sake of readability, the code itself is folded by default and only the results relevant for the questions at hand are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+# setup
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(knitr)
+library(kableExtra)
+# further packages that are loaded on demand are:
+# - here
+# - readr
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+```
+
+# Data
+
+Note that in this report, we load the de-identified and anonmyzed dataset. Please consult the [online repository](https://researchbox.org/1836) for the code that processed the raw data.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'replication_reports/data'
+
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+d <- readr::read_csv(here::here(data_dir, 'Survey.csv'))
+
+# make variable names more coding friendly and easier to understand
+d <- d |>
+  rename(duration_study = `Duration (in seconds)`,
+         relative = relative_1,
+         investment_experience = inv_exp,
+         gender = `gender `
+         )
+
+# convert gender to factor
+d$gender <- factor(d$gender)
+```
+
+
+# Descriptives
+
+@tbl-obs gives a demographic overview of the dataset, and the importance ratings are shown in @tbl-importance.
+
+```{r}
+#| label: tbl-obs
+#| tbl-cap: Demographic overview of survey data
+#| warning: false
+
+d |> 
+  summarize(N = n(),
+            Age = round(mean(age, na.rm = T), 1),
+            `% Female`= round(prop.table(table(gender))["Female"]*100, 1),
+            `Years Invest. Exp.` = round(mean(d$investment_experience), 1)
+            ) |> kbl(align = rep('c', 4))
+```
+
+```{r}
+#| label: tbl-importance
+#| tbl-cap: Importance ratings for content quality, visual design, and their relative tradeoff
+#| warning: false
+
+d |> summarize(N = n(), Mean = mean(content), SD = sd(content), Min = min(content), Max = max(content)) -> imp_content
+d |> summarize(N = n(), Mean = mean(design), SD = sd(design), Min = min(design), Max = max(design)) -> imp_design
+d |> summarize(N = n(), Mean = mean(relative), SD = sd(relative), Min = min(relative), Max = max(relative)) -> imp_relative
+
+bind_rows(imp_content, imp_design, imp_relative, .id = "Outcome") -> res_importance
+res_importance$Outcome <- c("Content", "Design", "Relative")
+
+res_importance |> kbl(digits = 2, format.args = list(decimal.mark = ".", big.mark = ",")) |> kable_styling()
+```
+
+When asked to rate the importance of content quality and visual design independently, the VCs and BAs rated their importance similarly high (content quality: M = `r round(mean(d$content), 2)`, SD = `r round(sd(d$content), 2)`; visual design: M = `r round(mean(d$design), 2)`, SD = `r round(sd(d$design), 2)`).
+However, when forced to make a direct comparison of the relative importance, the investors rated content to be about `r round(mean(d$relative)/(100-mean(d$relative)), 0)` times more important than design 
+(`r round(mean(d$relative), 2)`% vs. `r 100-round(mean(d$relative), 2)`%; SD = `r round(sd(d$relative), 2)`).
+
+# Plot
+
+@fig-survey summarizes the results of the survey.
+
+```{r}
+#| label: fig-survey
+#| fig-cap: Survey results about the importance of content quality and visual design for investors’ initial evaluation
+#| fig-width: 12
+#| fig-asp: .75
+#| out-width: 100%
+#| warning: false
+
+# define colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+
+# create new dataset for plotting which has transformed means that add up to 100
+# (to be used in a stacked bar plot)
+
+# calculate means
+d |> summarise(mean_content = mean(content), mean_design = mean(design)) -> means
+# transform means
+means |> mutate(mean_content_100 = mean_content / (mean_content + mean_design) * 100,
+                mean_design_100 = mean_design / (mean_content + mean_design) * 100) -> means
+# reshape data for plotting
+data.frame(category = factor(c("Content Quality", "Visual Design")),
+           importance = c(means$mean_content_100, means$mean_design_100),
+           importance_raw = c(means$mean_content, means$mean_design)) -> plot_data
+# change reference level of category
+plot_data$category <- relevel(plot_data$category, ref = "Visual Design")
+
+# create plot (importance ratings of content and design)
+p1 <- ggplot(plot_data, aes(x = "", y = importance_raw, fill = category)) +
+  geom_bar(stat = "identity", width = .5, position = "fill") +
+  geom_text(aes(label = round(importance_raw, 2)), position = position_fill(vjust = 0.75), size = 5.5, color = c("white", "black"), family = "Roboto Condensed") +
+  geom_text(aes(label = category), position = position_fill(vjust = 0.35), size = 5.5, color = c("white", "black"), family = "Roboto Condensed") +
+  scale_fill_manual(values = c(blue_light, blue_dark)) +
+  theme_void() +
+  theme(legend.position = "none") +
+  labs(title = "Importance Ratings") +
+  coord_flip()
+
+
+# create second dataset for plotting relative importance
+data.frame(category = c("Priority of Content over Design", ""),
+           priority = c(mean(d$relative), 100 - mean(d$relative))) -> plot_data2
+# create plot (relative importance)
+p2 <- ggplot(plot_data2, aes(x = "", y = priority, fill = category)) +
+  geom_bar(stat = "identity", width = .5, position = "fill") +
+  geom_text(aes(label = c(round(priority, 2)[1], "")), position = position_fill(vjust = 0.785), size = 5.5, color = "white", family = "Roboto Condensed") +
+  geom_text(aes(label = category), position = position_fill(vjust = 0.385), size = 5.5, color = "white", family = "Roboto Condensed") +
+  scale_fill_manual(values = c("gray90", blue_main)) +
+  theme_void() +  
+  theme(legend.position = "none") +
+  labs(title = "Relative Importance") +
+  coord_flip()
+
+# combine plots (needs package patchwork loaded)
+p1 / p2 + plot_layout(guides = 'collect') +
+  plot_annotation(
+    caption = paste0("Data:\nN = ",
+                     nrow(d),
+                     " VCs and BAs rated how important content quality and visual design are for their initial evaluation\n", 
+                     "(scale 1–7). They were also asked about the relative importance of content over design (scale 0–100).")
+) & theme(
+  plot.title = element_text(hjust = .055, size = 18, family = "Roboto Condensed", face = "bold", margin = margin(t = 18, r = 0, b = -35, l = 0)),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption = element_text(size = 12, hjust= 0, family = "Roboto Condensed", margin = margin(t = -10, r = 0, b = 0, l = 38)),
+  aspect.ratio = 0.2
+)
+```
+
+

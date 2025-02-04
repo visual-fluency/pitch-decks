@@ -1,0 +1,1039 @@
+---
+title: "Manipulation Checks"
+subtitle: "Replication Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    code-fold: true
+    code-tools: false
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+---
+
+<!--
+# Last update: 04-02-2025
+# Author: <blinded for review>
+-->
+
+# Introduction
+
+For both our fictitious startups (Software: **PerkSouq**; Healthcare: **Brachytix**), we ran manipulation checks of the proposed pitch decks. Specifically, we ran four online experiments in which either design (i.e., visual fluency) or substantive quality was manipulated and their impact on several measures was tested.
+
+We ran all online experiments on [Qualtrics](https://www.qualtrics.com), hosted the pitch decks on [DocSend](https://www.docsend.com), and recruited the participants via [Prolific](https://www.prolific.co). For details, see the corresponding [AsPredicted](https://aspredicted.org) pre-registrations listed in @tbl-prereg.
+
+|Startup    | Manipulation | Pre-Reg Date | AsPredicted #                             | Target N | Data Collection Start | 
+|:----------|:-------------|:-----------:|:-----------------------------------------:|:--------:|:---------------------:|
+|Software   | Design       | 03-11-2022  | [111740](https://aspredicted.org/2T6_H3J) | 160      | 04-11-2022            |
+|           | Quality      | 11-11-2022  | [112721](https://aspredicted.org/T6F_BZ7) | 160      | 12-11-2022            |
+|Healthcare | Design       | 18-12-2022  | [116999](https://aspredicted.org/3M6_666) | 160      | 19-12-2022            |
+|           | Quality      | 18-12-2022  | [117000](https://aspredicted.org/HHK_9KN) | 160      | 19-12-2022            |
+: Overview Pre-Registrations {#tbl-prereg}
+
+In what follows, we will give an overview of the results, separately for each startup. As this report is dynamically created with R and Quarto, we also report all code. However, for the sake of readability, the code itself is folded by default and only the results relevant for the questions at hand are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+options(knitr.kable.NA = '')
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+# further packages that are loaded on demand are:
+# - rstatix
+# - weights
+# - stringr
+# - readr
+# - car
+# - tidyr
+# - hrbrthemes
+# - grid
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+
+# Custom functions
+#
+# negate %in%
+`%notin%` <- Negate(`%in%`)
+#
+# extract t-test results and Cohen's d and put the results together as a string
+ttest_str <- function(formula, data, alternative = "two.sided", ...){
+  # first, check for homogeneous group variances using Levene's test
+  # --> if significant, use Welch's t-test (i.e., var.equal = FALSE)
+  # note that we use a significance level of .05 for Levene's test, as pre-registered
+  # we check if the p-value is not significant (i.e., p >= .05) and save this
+  # information var.equal --> thus, we can use 'var.equal = var.equal' in the t-test
+  var.equal <- car::leveneTest(formula, data = data)$`Pr(>F)`[1] >= .05
+  # perform t-test
+  tres <- t.test(formula, data = data, var.equal = var.equal, alternative = alternative)
+  # extract Cohen's d
+  dres <- rstatix::cohens_d(formula, data = data, var.equal = var.equal)
+  # construct p-value
+  pval <- ifelse(tres$p.value < .001, " < .001", paste0(" = ",weights::rd(tres$p.value, 3)))
+  # extract dependent variable
+  dv <- stringr::str_match(deparse(formula), '[^ ~]*')
+  # construct return string
+  return(paste0(stringr::str_to_sentence(dv),
+                "\nt(",
+                ifelse(var.equal == TRUE, tres$parameter, weights::rd(tres$parameter, 1)),
+                ") = ", sprintf('%.2f', tres$statistic),
+                ", p", pval,
+                "; d = ", weights::rd(dres$effsize, 2)))
+}
+#
+# extract t-test results and Cohen's d and put the results together as a table
+ttest_tbl <- function(formula, data, alternative = "two.sided", ...){
+  # first, check for homogeneous group variances using Levene's test
+  # --> if significant, use Welch's t-test (i.e., var.equal = FALSE)
+  # note that we use a significance level of .05 for Levene's test, as pre-registered
+  # we check if the p-value is not significant (i.e., p >= .05) and save this
+  # information var.equal --> thus, we can use 'var.equal = var.equal' in the t-test
+  var.equal <- car::leveneTest(formula, data = data)$`Pr(>F)`[1] >= .05
+  # perform t-test
+  tres <- t.test(formula, data = data, var.equal = var.equal, alternative = alternative)
+  # extract Cohen's d
+  dres <- rstatix::cohens_d(formula, data = data, var.equal = var.equal)
+  # construct p-value
+  pval <- ifelse(tres$p.value < .001, " < .001", weights::rd(tres$p.value, 3))
+  # extract dependent variable
+  dv <- stringr::str_match(deparse(formula), '[^ ~]*')
+  # construct return df
+  df = data.frame(DV = NA, condition=rep(NA, 2), N = NA, Mean = NA, SD = NA, test_statistic = NA, p = NA, d = NA)
+  # fill values
+  df$DV[1] <- stringr::str_to_sentence(dres$`.y.`)
+  df$condition <- c(dres$group1, dres$group2)
+  df$N <- c(dres$n1, dres$n2)
+  df$Mean <- weights::rd(aggregate(formula, data = data, FUN = mean)[,2], 2)
+  df$SD <- weights::rd(aggregate(formula, data = data, FUN = sd)[,2], 3)
+  df$test_statistic[1] <- paste0("t(",
+                                 ifelse(var.equal == TRUE, tres$parameter,
+                                        weights::rd(tres$parameter, 1)),
+                                 ") = ",
+                                 sprintf('%.2f', tres$statistic))
+  df$p[1] <- pval
+  df$d[1] <- weights::rd(dres$effsize, 2)
+  return(df)
+}
+```
+
+# Data preparation
+
+For each experiment, the data preparation steps included cleaning and preprocessing the survey data (from Qualtrics), the demographic data (from Prolific), and the pitch deck tracking data (from DocSend), respectively. Next, the three data sources were merged, the pre-registered exclusions were performed, and the final, processed datasets were saved. 
+
+Note that in this report, we load the de-identified and anonmyzed datasets. Please consult the [online repository](https://researchbox.org/1836) for the code that processed the raw data.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'replication_reports/data'
+
+# -----------------------------------------------------------------------------
+# MC 1: Design (Software startup) 
+# AsPredicted Pre-Registration #111740
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'MC_1_Design_Software_Qualtrics.csv'))
+# convert fluency condition into factor
+d_qua$fluency_condition <- as.factor(d_qua$fluency_condition)
+# recode complexity as simplicity
+# --reminder: complexity was measured on a 1–7 scale
+d_qua$simplicity <- 8 - d_qua$complexity
+# relocate simplicity in the dataframe
+d_qua <- d_qua |> relocate(simplicity, .before = symmetry)
+# delete complexity from the dataframe
+d_qua$complexity <- NULL
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, fluency = `fluency _1`,
+         attention_check_text = attention_check_99_TEXT,
+         similar_study_text = similar_study_1_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'MC_1_Design_Software_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`) |>
+  rename_at(vars(-ID), tolower)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'MC_1_Design_Software_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = Duration, completion = `% Completion`) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format,
+# multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, similar_study_text, age, sex,
+                            ethnicity, country, nationality, employment))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully",
+  "'I have read this text carefully'",
+  "'I have read this text carefully",
+  "i have read this text carefully",
+  "I have read this text carefully.",
+  "I have ready this text carefully",
+  "'I have read this text carefully' below"
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "HR technology"))
+# participants completed previous study on the topic
+d <- d |> filter(!(similar_study != "No"))
+# condition from Qualtrics does not match DocSend condition
+d <- d |> filter(fluency_condition == treatment)
+
+# save processed data
+design_sw <- d
+
+
+# -----------------------------------------------------------------------------
+# MC 2: Quality (Software startup) 
+# AsPredicted Pre-Registration #112721
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'MC_2_Quality_Software_Qualtrics.csv'))
+# convert quality condition into factor
+d_qua$quality_condition <- as.factor(d_qua$quality_condition)
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, fluency = `fluency _1`,
+         attention_check_text = attention_check_99_TEXT,
+         similar_study_text = similar_study_1_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'MC_2_Quality_Software_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`) |>
+  rename_at(vars(-ID), tolower)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'MC_2_Quality_Software_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = Duration, completion = `% Completion`) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format, multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, similar_study_text, age, sex,
+                            ethnicity, country, nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+"I have read this text carefully",
+"i have read this text carefully",
+"I have read this text carefully.",
+"I have read this carefully",
+"I have read this text",
+"'I have read this text carefully'",
+"I have read the text carefully",
+"I have read this  text carefully" 
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "HR technology"))
+# participants completed previous study on the topic
+d <- d |> filter(!(similar_study != "No"))
+
+# save processed data
+quality_sw <- d
+
+
+# -----------------------------------------------------------------------------
+# MC 3: Design (Healthcare startup) 
+# AsPredicted Pre-Registration #116999
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'MC_3_Design_Healthcare_Qualtrics.csv'))
+# convert fluency condition into factor
+d_qua$fluency_condition <- as.factor(d_qua$fluency_condition)
+# recode complexity as simplicity
+# --reminder: complexity was measured on a 1–7 scale
+d_qua$simplicity <- 8 - d_qua$complexity
+# relocate simplicity in the dataframe
+d_qua <- d_qua |> relocate(simplicity, .before = symmetry)
+# delete complexity from the dataframe
+d_qua$complexity <- NULL
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, fluency = `fluency _1`,
+         attention_check_text = attention_check_99_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'MC_3_Design_Healthcare_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`) |>
+  rename_at(vars(-ID), tolower)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'MC_3_Design_Healthcare_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = Duration, completion = `% Completion`) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format,
+# multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, age, sex, ethnicity, country,
+                            nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully",
+  "I have read this text carefully.",
+  "' I have read this text carefully'",
+  "I have read this text carefullly",
+  "'I have read this text carefully'",
+  "\"I have read this text carefully\"",
+  "have read this text carefully",
+  "I have read the text carefully"
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "Medical innovation"))
+
+# save processed data
+design_hc <- d
+
+
+# -----------------------------------------------------------------------------
+# MC 4: Quality (Healthcare startup)
+# AsPredicted Pre-Registration #117000
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'MC_4_Quality_Healthcare_Qualtrics.csv'))
+# convert quality condition into factor
+d_qua$quality_condition <- as.factor(d_qua$quality_condition)
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, fluency = `fluency _1`,
+         attention_check_text = attention_check_99_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'MC_4_Quality_Healthcare_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`) |>
+  rename_at(vars(-ID), tolower)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'MC_4_Quality_Healthcare_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = Duration, completion = `% Completion`) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format, multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, age, sex, ethnicity, country,
+                            nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully",  
+  "I have read this text carefully.", 
+  "i have read this text carefully",  
+  "'I have read this text carefully'" 
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "Medical innovation"))
+
+# save processed data
+quality_hc <- d
+# remove temporary objects
+rm(d)
+```
+
+
+# Descriptives
+
+@tbl-obs gives a demographic overview of each dataset. Further descriptives and analyses are reported separately for each startup and each experiment in the following sections.
+
+```{r}
+#| label: tbl-obs
+#| tbl-cap: Demographic overview of all four manipulation check studies
+#| warning: false
+
+design_sw |> select(age, sex, ethnicity, country, nationality, employment) -> demo_design_sw
+design_hc |> select(age, sex, ethnicity, country, nationality, employment) -> demo_design_hc
+quality_sw |> select(age, sex, ethnicity, country, nationality, employment) -> demo_quality_sw
+quality_hc |> select(age, sex, ethnicity, country, nationality, employment) -> demo_quality_hc
+
+demo_sw <- bind_rows(list(Design = demo_design_sw, Quality = demo_quality_sw), .id = "Manipulation")
+demo_hc <- bind_rows(list(Design = demo_design_hc, Quality = demo_quality_hc), .id = "Manipulation")
+
+demo_all <- bind_rows(list(Software = demo_sw, Healthcare = demo_hc), .id = "Startup")
+demo_all$Startup <- factor(demo_all$Startup, levels = c("Software", "Healthcare"))
+
+demo_all |> 
+  group_by(Startup, Manipulation) |> 
+  summarize(N = n(),
+            Age = round(mean(age, na.rm = T), 2),
+            `% Female`= round(prop.table(table(sex))["Female"]*100, 1),
+            `% White` = round(prop.table(table(ethnicity))["White"]*100, 1),
+            `% UK` = round(prop.table(table(country))["United Kingdom"]*100, 1),
+            `% Full-Time Empl.` = round(prop.table(table(employment))["Full-Time"]*100, 1)
+            ) |> kable()
+```
+
+
+# Software startup
+
+In @sec-design-sw, we report the results of the first experiment in which we manipulated the design of the software startup's pitch decks via visual processing fluency. Afterwards, in @sec-quality-sw, we report the results of the second experiment in which we manipulated substantive quality in the pitch decks.
+In each case, we report the mean and SD values per group and the results of the pre-registered analyses. We conclude each section with plots that show the results visually.
+
+## Design manipulation (visual fluency) {#sec-design-sw}
+
+In this between-subjects experiment, we presented participants one of two pitch decks that varied only in their visual fluency. The content (i.e., substantive quality) was held constant across conditions. Specifically, the pitch deck's design was systematically varied by a design agency with the instruction that four dimensions of processing fluency (contrast, clarity, symmetry, simplicity) should be each either relatively high or relatively low. The goal was to create a high fluency and a low fluency pitch deck.
+
+In the online experiment, participants were randomly assigned to one of the two visual fluency conditions, had to open and carefully study the pitch deck, and answer questions on their perceived contrast, clarity, simplicity, symmetry, processing fluency, and venture quality.
+
+### Results
+
+@tbl-results-ps-design shows the results of all t-tests that were run. Each t-test compares the group means of the respective dependent variable across the two visual fluency conditions. Note that we ran either Student's or Welch's t-test based on the result of Levene's test for homogeneous group variances.
+
+```{r}
+#| label: tbl-results-ps-design
+#| tbl-cap: 'Manipulation checks, visual fluency (software startup)'
+d <- design_sw
+
+# convert fluency_condition to factor
+d$fluency_condition <- as.factor(d$fluency_condition)
+
+# -- Note: Although for most hypotheses a direction was specified, we do not
+#          specify alternative = "greater" in our tests. However, we include
+#          comments in the code where this would have been "allowed", so that
+#          an interested reader can divide the resulting p-values by 2.
+
+# 1. Contrast
+res_contr <- ttest_tbl(contrast ~ fluency_condition, data = d) # alternative = "greater"
+
+# 2. Clarity
+res_clar <- ttest_tbl(clarity ~ fluency_condition, data = d) # alternative = "greater"
+
+# 3. Symmetry
+res_sym <- ttest_tbl(symmetry ~ fluency_condition, data = d) # alternative = "greater"
+
+# 4. Simplicity
+res_simpl <- ttest_tbl(simplicity ~ fluency_condition, data = d) # alternative = "greater"
+
+# 5. Processing Fluency
+res_pf <- ttest_tbl(fluency ~ fluency_condition, data = d) # alternative = "greater"
+
+# 6. Venture Quality
+res_qual <- ttest_tbl(quality ~ fluency_condition, data = d)
+
+res_pf[1,1] <- stringr::str_replace(res_pf[1,1], "Fluency", "Processing fluency")
+res_qual[1,1] <- stringr::str_replace(res_qual[1,1], "Quality", "Venture quality")
+
+# put all results together
+bind_rows(res_contr, res_clar, res_sym, res_simpl, res_pf, res_qual) |>
+  kable(col.names = c("Outcome", "Fluency Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"),
+        align = 'llrrrrrr')
+```
+
+### Plots
+
+@fig-ps-design summarizes the results of this manipulation check visually.
+
+```{r}
+#| label: fig-ps-design
+#| fig-cap: Summary of the fluency manipulation checks for the software startup
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+#| warning: false
+
+# change factor labels for fluency
+d$fluency_condition <- factor(d$fluency_condition, levels = c("high", "low"), labels = c("High", "Low"))
+
+# create long dataset for plot
+d_long <- d |> select(contrast:symmetry, fluency, quality, fluency_condition) |> 
+  tidyr::pivot_longer(contrast:quality, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+str_contrast <- ttest_str(contrast ~ fluency_condition, data = d) # alternative = "greater"
+str_clarity <- ttest_str(clarity ~ fluency_condition, data = d) # alternative = "greater"
+str_symmetry <- ttest_str(symmetry ~ fluency_condition, data = d) # alternative = "greater"
+str_simplicity <- ttest_str(simplicity ~ fluency_condition, data = d) # alternative = "greater"
+str_fluency <- ttest_str(fluency ~ fluency_condition, data = d) # alternative = "greater"
+str_quality <- ttest_str(quality ~ fluency_condition, data = d)
+
+str_fluency <- stringr::str_replace(str_fluency, "Fluency", "Processing fluency")
+str_quality <- stringr::str_replace(str_quality, "Quality", "Venture quality")
+
+d_long$measure <- factor(d_long$measure, levels = c("contrast", "clarity", "symmetry", "simplicity", "fluency", "quality"),
+                          labels = c(str_contrast, str_clarity, str_symmetry, str_simplicity, str_fluency, str_quality))
+
+d_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                  .default = 1),
+                 ymax = case_when(measure == "fluency" ~ 100,
+                                  .default = 7
+                 )) -> d_long
+                                  
+# plot result
+ggplot(d_long, aes(x=fluency_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +  
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = element_text(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Visual fluency (software startup)",
+       subtitle = "Effect of the low vs. high fluency pitch deck versions on various outcomes",
+       x = "Pitch deck visual fluency",
+       y = NULL,
+       caption = paste0("Note: (Jittered) raw values and group means are shown (n = ", nrow(d), ")."))
+```
+
+
+## Quality manipulation {#sec-quality-sw}
+
+In this between-subjects experiment, we presented participants one of two pitch decks that varied only in their substantive quality. The design (i.e., visual fluency) was held constant across conditions. Participants were randomly assigned to one of the two substantive quality conditions, had to open and carefully study the pitch deck, and rate the startup's intellectual property, human capital, commercialization opportunity, legitimacy, and venture quality. They further had to rate the perceived processing fluency of the pitch deck.
+
+### Results
+
+@tbl-results-ps-design shows the results of all t-tests that were run. Each t-test compares the group means of the respective dependent variable across the two quality conditions. Note that we ran either Student's or Welch's t-test based on the result of Levene's test for homogeneous group variances.
+
+```{r}
+#| label: tbl-results-ps-quality
+#| tbl-cap: 'Manipulation checks, substantive quality (software startup)'
+d <- quality_sw
+
+# convert quality_condition to factor
+d$quality_condition <- as.factor(d$quality_condition)
+
+# -- Note: Although for most hypotheses a direction was specified, we do not
+#          specify alternative = "greater" in our tests. However, we include
+#          comments in the code where this would have been "allowed", so that
+#          an interested reader can divide the resulting p-values by 2.
+
+# 1. Intellectual Property
+res_intell <- ttest_tbl(intell_prop ~ quality_condition, data = d) # alternative = "greater"
+
+# 2. Human Capital
+res_hum <- ttest_tbl(hum_cap ~ quality_condition, data = d) # alternative = "greater"
+
+# 3. Commercialization opportunity
+res_commerc <- ttest_tbl(commerc ~ quality_condition, data = d) # alternative = "greater"
+
+# 4. Organizational legitimacy
+res_legitim <- ttest_tbl(legitim ~ quality_condition, data = d) # alternative = "greater"
+
+# 5. Overall Venture Quality / Potential
+res_qual <- ttest_tbl(quality ~ quality_condition, data = d) # alternative = "greater"
+
+# 6. Processing Fluency
+res_pf <- ttest_tbl(fluency ~ quality_condition, data = d)
+
+res_intell[1,1] <- stringr::str_replace(res_intell[1,1], "Intell_prop", "Intellectual property")
+res_hum[1,1] <- stringr::str_replace(res_hum[1,1], "Hum_cap", "Human capital")
+res_commerc[1,1] <- stringr::str_replace(res_commerc[1,1], "Commerc", "Commercialization opportunity")
+res_legitim[1,1] <- stringr::str_replace(res_legitim[1,1], "Legitim", "Organizational legitimacy")
+res_qual[1,1] <- stringr::str_replace(res_qual[1,1], "Quality", "Venture quality")
+res_pf[1,1] <- stringr::str_replace(res_pf[1,1], "Fluency", "Processing fluency")
+
+# put all results together
+bind_rows(res_intell, res_hum, res_commerc, res_legitim, res_qual, res_pf) |>
+  kable(col.names = c("Outcome", "Quality Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"),
+        align = 'llrrrrrr')
+```
+
+### Plots
+
+@fig-ps-quality summarizes the results of this manipulation check visually.
+
+```{r}
+#| label: fig-ps-quality
+#| fig-cap: Summary of the quality manipulation checks for the software startup
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+#| warning: false
+
+# create long dataset for plot
+d_long <- d |> select(intell_prop:legitim, quality, fluency, quality_condition) |> 
+  tidyr::pivot_longer(intell_prop:fluency, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+str_intell_prop <- ttest_str(intell_prop ~ quality_condition, data = d) # alternative = "greater"
+str_hum_cap <- ttest_str(hum_cap ~ quality_condition, data = d) # alternative = "greater"
+str_commerc <- ttest_str(commerc ~ quality_condition, data = d) # alternative = "greater"
+str_legitim <- ttest_str(legitim ~ quality_condition, data = d) # alternative = "greater"
+str_quality <- ttest_str(quality ~ quality_condition, data = d) # alternative = "greater"
+str_fluency <- ttest_str(fluency ~ quality_condition, data = d)
+
+str_intell_prop <- stringr::str_replace(str_intell_prop, "Intell_prop", "Intellectual property")
+str_hum_cap <- stringr::str_replace(str_hum_cap, "Hum_cap", "Human capital")
+str_commerc <- stringr::str_replace(str_commerc, "Commerc", "Commercialization opportunity")
+str_legitim <- stringr::str_replace(str_legitim, "Legitim", "Organizational legitimacy")
+str_quality <- stringr::str_replace(str_quality, "Quality", "Venture quality")
+str_fluency <- stringr::str_replace(str_fluency, "Fluency", "Processing fluency")
+
+d_long$measure <- factor(d_long$measure, levels = c("intell_prop", "hum_cap", "commerc", "legitim","quality",  "fluency"),
+                         labels = c(str_intell_prop, str_hum_cap, str_commerc, str_legitim, str_quality, str_fluency))
+
+# create ymin and ymax for plot
+d_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                  .default = 1),
+                 ymax = case_when(measure == "fluency" ~ 100,
+                                  .default = 7
+)) -> d_long
+
+
+# plot result
+ggplot(d_long, aes(x=quality_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = element_text(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Substantive quality (software startup)",
+       subtitle = "Effect of the low vs. high quality pitch deck versions on various outcomes",
+       x = "Pitch deck substantive quality",
+       y = NULL,
+       caption = paste0("Note: (Jittered) raw values and group means are shown (n = ", nrow(d), ")."))
+```
+
+
+
+# Healthcare startup
+
+For the healthcare startup, all steps for the manipulation checks were the same as before with software startup. The only difference was the topic / domain of the startup. We report the results of the visual fluency manipulation for the healthcare startup @sec-design-hc. In @sec-quality-hc, the results of the substantive quality manipulation check for the healthcare startup are presented.
+
+## Design manipulation (visual fluency) {#sec-design-hc}
+
+As before, we presented participants one of two pitch decks that varied only in their visual fluency. The content (i.e., substantive quality) was held constant across conditions. Participants were randomly assigned to the conditions. The dependent variables were the same as before (i.e., perceived contrast, clarity, symmetry, simplicity, processing fluency, and venture quality).
+
+### Results
+
+@tbl-results-bt-design shows the results of all t-tests that were run. Each t-test compares the group means of the respective dependent variable across the two visual fluency conditions. Note that we ran either Student's or Welch's t-test based on the result of Levene's test for homogeneous group variances.
+
+```{r}
+#| label: tbl-results-bt-design
+#| tbl-cap: 'Manipulation checks, visual fluency (healthcare startup)'
+d <- design_hc
+
+# convert fluency_condition to factor
+d$fluency_condition <- as.factor(d$fluency_condition)
+
+# -- Note: Although for most hypotheses a direction was specified, we do not
+#          specify alternative = "greater" in our tests. However, we include
+#          comments in the code where this would have been "allowed", so that
+#          an interested reader can divide the resulting p-values by 2.
+
+# 1. Contrast
+res_contr <- ttest_tbl(contrast ~ fluency_condition, data = d) # alternative = "greater"
+
+# 2. Clarity
+res_clar <- ttest_tbl(clarity ~ fluency_condition, data = d) # alternative = "greater"
+
+# 3. Symmetry
+res_sym <- ttest_tbl(symmetry ~ fluency_condition, data = d) # alternative = "greater"
+
+# 4. Simplicity
+res_simpl <- ttest_tbl(simplicity ~ fluency_condition, data = d) # alternative = "greater"
+
+# 5. Processing Fluency
+res_pf <- ttest_tbl(fluency ~ fluency_condition, data = d) # alternative = "greater"
+
+# 6. Venture Quality
+res_qual <- ttest_tbl(quality ~ fluency_condition, data = d)
+
+res_pf[1,1] <- stringr::str_replace(res_pf[1,1], "Fluency", "Processing fluency")
+res_qual[1,1] <- stringr::str_replace(res_qual[1,1], "Quality", "Venture quality")
+
+# put all results together
+bind_rows(res_contr, res_clar, res_sym, res_simpl, res_pf, res_qual) |>
+  kable(col.names = c("Outcome", "Fluency Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"),
+        align = 'llrrrrrr')
+```
+
+### Plots
+
+@fig-bt-design summarizes the results of this manipulation check visually.
+
+```{r}
+#| label: fig-bt-design
+#| fig-cap: Summary of the fluency manipulation checks for the healthcare startup
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+#| warning: false
+
+# create long dataset for plot
+d_long <- d |> select(contrast:symmetry, fluency, quality, fluency_condition) |> 
+  tidyr::pivot_longer(contrast:quality, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+str_contrast <- ttest_str(contrast ~ fluency_condition, data = d) # alternative = "greater"
+str_clarity <- ttest_str(clarity ~ fluency_condition, data = d) # alternative = "greater"
+str_symmetry <- ttest_str(symmetry ~ fluency_condition, data = d) # alternative = "greater"
+str_simplicity <- ttest_str(simplicity ~ fluency_condition, data = d) # alternative = "greater"
+str_fluency <- ttest_str(fluency ~ fluency_condition, data = d) # alternative = "greater"
+str_quality <- ttest_str(quality ~ fluency_condition, data = d)
+
+str_fluency <- stringr::str_replace(str_fluency, "Fluency", "Processing fluency")
+str_quality <- stringr::str_replace(str_quality, "Quality", "Venture quality")
+
+d_long$measure <- factor(d_long$measure, levels = c("contrast", "clarity", "symmetry", "simplicity", "fluency", "quality"),
+                          labels = c(str_contrast, str_clarity, str_symmetry, str_simplicity, str_fluency, str_quality))
+
+d_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                  .default = 1),
+                 ymax = case_when(measure == "fluency" ~ 100,
+                                  .default = 7
+                 )) -> d_long
+
+# plot result
+ggplot(d_long, aes(x=fluency_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = element_text(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Visual fluency (healthcare startup)",
+       subtitle = "Effect of the low vs. high fluency pitch deck versions on various outcomes",
+       x = "Pitch deck visual fluency",
+       y = NULL,
+       caption = paste0("Note: (Jittered) raw values and group means are shown (n = ", nrow(d), ")."))
+```
+
+
+## Quality manipulation {#sec-quality-hc}
+
+As before, we presented participants one of two pitch decks that varied only in their substantive quality. The design was held constant across conditions. Participants were randomly assigned to the conditions. The dependent variables are the same as before (i.e., intellectual property, human capital, commercialization opportunity, legitimacy, venture quality, and processing fluency).
+
+### Results
+
+@tbl-results-bt-design shows the results of all t-tests that were run. Each t-test compares the group means of the respective dependent variable across the two fluency conditions. Note that we ran either Student's or Welch's t-test based on the result of Levene's test for homogeneous group variances. <!-- We further performed one-sided tests where appropriate (i.e., where we hypothesized a direction of an effect). -->
+
+```{r}
+#| label: tbl-results-bt-quality
+#| tbl-cap: 'Manipulation checks, substantive quality (healthcare startup)'
+d <- quality_hc
+
+# convert quality_condition to factor
+d$quality_condition <- as.factor(d$quality_condition)
+
+# -- Note: Although for most hypotheses a direction was specified, we do not
+#          specify alternative = "greater" in our tests. However, we include
+#          comments in the code where this would have been "allowed", so that
+#          an interested reader can divide the resulting p-values by 2.
+
+# 1. Intellectual Property
+res_intell <- ttest_tbl(intell_prop ~ quality_condition, data = d) # alternative = "greater"
+
+# 2. Human Capital
+res_hum <- ttest_tbl(hum_cap ~ quality_condition, data = d) # alternative = "greater"
+
+# 3. Commercialization opportunity
+res_commerc <- ttest_tbl(commerc ~ quality_condition, data = d) # alternative = "greater"
+
+# 4. Organizational legitimacy
+res_legitim <- ttest_tbl(legitim ~ quality_condition, data = d) # alternative = "greater"
+
+# 5. Overall Venture Quality / Potential
+res_qual <- ttest_tbl(quality ~ quality_condition, data = d) # alternative = "greater"
+
+# 6. Processing Fluency
+res_pf <- ttest_tbl(fluency ~ quality_condition, data = d)
+
+res_intell[1,1] <- stringr::str_replace(res_intell[1,1], "Intell_prop", "Intellectual property")
+res_hum[1,1] <- stringr::str_replace(res_hum[1,1], "Hum_cap", "Human capital")
+res_commerc[1,1] <- stringr::str_replace(res_commerc[1,1], "Commerc", "Commercialization opportunity")
+res_legitim[1,1] <- stringr::str_replace(res_legitim[1,1], "Legitim", "Organizational legitimacy")
+res_qual[1,1] <- stringr::str_replace(res_qual[1,1], "Quality", "Venture quality")
+res_pf[1,1] <- stringr::str_replace(res_pf[1,1], "Fluency", "Processing fluency")
+
+# put all results together
+bind_rows(res_intell, res_hum, res_commerc, res_legitim, res_qual, res_pf) |>
+  kable(col.names = c("Outcome", "Quality Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"),
+        align = 'llrrrrrr')
+```
+
+### Plots
+
+@fig-bt-quality summarizes the results of this manipulation check visually.
+
+```{r}
+#| label: fig-bt-quality
+#| fig-cap: Summary of the quality manipulation checks for the healthcare startup
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+#| warning: false
+
+# create long dataset for plot
+d_long <- d |> select(intell_prop:legitim, quality, fluency, quality_condition) |> 
+  tidyr::pivot_longer(intell_prop:fluency, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+str_intell_prop <- ttest_str(intell_prop ~ quality_condition, data = d) # alternative = "greater"
+str_hum_cap <- ttest_str(hum_cap ~ quality_condition, data = d) # alternative = "greater"
+str_commerc <- ttest_str(commerc ~ quality_condition, data = d) # alternative = "greater"
+str_legitim <- ttest_str(legitim ~ quality_condition, data = d) # alternative = "greater"
+str_quality <- ttest_str(quality ~ quality_condition, data = d) # alternative = "greater"
+str_fluency <- ttest_str(fluency ~ quality_condition, data = d)
+
+str_intell_prop <- stringr::str_replace(str_intell_prop, "Intell_prop", "Intellectual property")
+str_hum_cap <- stringr::str_replace(str_hum_cap, "Hum_cap", "Human capital")
+str_commerc <- stringr::str_replace(str_commerc, "Commerc", "Commercialization opportunity")
+str_legitim <- stringr::str_replace(str_legitim, "Legitim", "Organizational legitimacy")
+str_quality <- stringr::str_replace(str_quality, "Quality", "Venture quality")
+str_fluency <- stringr::str_replace(str_fluency, "Fluency", "Processing fluency")
+
+d_long$measure <- factor(d_long$measure, levels = c("intell_prop", "hum_cap", "commerc", "legitim","quality",  "fluency"),
+                         labels = c(str_intell_prop, str_hum_cap, str_commerc, str_legitim, str_quality, str_fluency))
+
+# create ymin and ymax for plot
+d_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                  .default = 1),
+                 ymax = case_when(measure == "fluency" ~ 100,
+                                  .default = 7
+)) -> d_long
+
+
+# plot result
+ggplot(d_long, aes(x=quality_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = element_text(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Substantive quality (healthcare startup)",
+       subtitle = "Effect of the low vs. high quality pitch deck versions on various outcomes",
+       x = "Pitch deck substantive quality",
+       y = NULL,
+       caption = paste0("Note: (Jittered) raw values and group means are shown (n = ", nrow(d), ")."))
+```
+
+
+<!-- # removed for anonymous review process
+# R Package Info {.appendix}
+```{r}
+grateful::scan_packages() |> kable()
+```
+--> 

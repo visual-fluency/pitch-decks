@@ -1,0 +1,36 @@
+project:
+  type: website
+  output-dir: docs  
+
+website:
+  title: "Pitch Decks"
+  navbar:
+    left:
+      - icon: house-door-fill
+        text: Home
+        href: index.qmd
+      - href: replication_reports/Replication_Report_1_Survey.qmd
+        text: VC and BA Survey
+      - href: replication_reports/Replication_Report_2_Benchmarking.qmd
+        text: Benchmarking Study
+      - href: replication_reports/Replication_Report_3_MCs.qmd
+        text: Manipulation Checks
+      - href: replication_reports/Replication_Report_4_Field_Experiment.qmd
+        text: Study 1 (Field Experiment)
+      - href: replication_reports/Replication_Report_5_Online_Experiments.qmd
+        text: Study 2 (Online Experiments)
+  page-footer:
+    background: light
+    left: "Copyright © 2025, *author names blinded for review*"
+    right:
+      - icon: github
+        href: https://github.com/visual-fluency/pitch-decks
+
+format:
+  html:
+    theme:
+      - journal
+      - custom.scss
+    css: styles.css
+    toc: true
+    page-layout: full

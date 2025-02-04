@@ -1,0 +1,1009 @@
+---
+title: "Online Experiments"
+subtitle: "Replication Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    code-fold: true
+    code-tools: false
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+execute:
+  warning: false
+  message: false       
+---
+
+<!--
+# Last update: 04-02-2025
+# Author: <blinded for review>
+-->
+
+# Introduction
+
+For both our fictitious startups (Software: **PerkSouq**; Healthcare: **Brachytix**), we ran online experiments to determine how the (stated) likelihood to invest depends on the substantive quality and visual fluency of a pitch deck.
+
+Specifically, we first ran a 2x2 between-subjects experiment for our software startup. To make sure that the instruction we used when measuring investment likelihood ("Based on the information at hand, what is the probability […]") did not bias the results, we ran a replication of this first experiment with a modified instruction ("Based on the pitch deck, what is the probability […]"). To ensure generalizability across domains, we then ran the same experiment for our healthcare startup.
+
+We ran all online experiments on [Qualtrics](https://www.qualtrics.com), hosted the pitch decks on [DocSend](https://www.docsend.com), and recruited the participants via [Prolific](https://www.prolific.co). For details, see the corresponding [AsPredicted](https://aspredicted.org) pre-registrations listed in @tbl-prereg.
+
+|Startup                | Pre-Reg Date | AsPredicted # | Data Collection Start | 
+|:----------------------|:-----------:|:-------------:|:---------------:|
+|Software startup               | 28-11-2022  | [114380](https://aspredicted.org/7HH_PPC)        | 30-11-2022      |
+|Software startup (Replication) | 16-12-2022  | [116872](https://aspredicted.org/MT1_SNZ)        | 17-12-2022      |
+|Healthcare startup              | 20-12-2022  | [117215](https://aspredicted.org/S7K_8ZX)        | 21-12-2022      |
+: Overview Pre-Registrations {#tbl-prereg}
+
+In what follows, we will give an overview of the results and robustness checks, followed by figures that summarize the results of the experiments.
+As this report is dynamically created with R and Quarto, we also report all code.
+However, for the sake of readability, the code itself is folded by default and only the results relevant for the questions at hand are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+options(knitr.kable.NA = '')
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggsignif)
+library(ggtext)
+library(patchwork)
+library(kableExtra)
+options(knitr.kable.NA = '',
+        kable_styling_bootstrap_options = c("striped", "condensed", "responsive"))
+
+# further packages that are loaded on demand are:
+# - supernova
+# - car
+# - rstatix
+# - forcats
+# - weights
+# - broom
+# - scales
+# - readr
+# - tidyr
+# - hrbrthemes
+# - emmeans
+# - grid
+
+
+# Custom functions
+#
+# negate %in%
+`%notin%` <- Negate(`%in%`)
+#
+# extract t-test results and Cohen's d and put the results together as a table
+ttest_tbl <- function(formula, data, alternative = "two.sided", ...){
+  # first, check for homogeneous group variances using Levene's test
+  # --> if significant, use Welch's t-test (i.e., var.equal = FALSE)
+  # note that we use a significance level of .05 for Levene's test, as pre-registered
+  # we check if the p-value is not significant (i.e., p >= .05) and save this
+  # information var.equal --> thus, we can use 'var.equal = var.equal' in the t-test
+  var.equal <- car::leveneTest(formula, data = data)$`Pr(>F)`[1] >= .05
+  # perform t-test
+  tres <- t.test(formula, data = data, var.equal = var.equal, alternative = alternative)
+  # extract Cohen's d
+  dres <- rstatix::cohens_d(formula, data = data, var.equal = var.equal)
+  # construct p-value
+  pval <- ifelse(tres$p.value < .001, " &lt; .001", weights::rd(tres$p.value, 3))
+  # extract dependent variable
+  dv <- stringr::str_match(deparse(formula), '[^ ~]*')
+  # construct return df
+  df = data.frame(DV = NA, condition=rep(NA, 2), N = NA, Mean = NA, SD = NA, test_statistic = NA, p = NA, d = NA)
+  # fill values
+  df$DV[1] <- stringr::str_to_sentence(dres$`.y.`)
+  df$condition <- c(dres$group1, dres$group2)
+  df$N <- c(dres$n1, dres$n2)
+  df$Mean <- weights::rd(aggregate(formula, data = data, FUN = mean)[,2], 2)
+  df$SD <- weights::rd(aggregate(formula, data = data, FUN = sd)[,2], 3)
+  df$test_statistic[1] <- paste0("t(",
+                                 ifelse(var.equal == TRUE, tres$parameter,
+                                        weights::rd(tres$parameter, 1)),
+                                 ") = ",
+                                 sprintf('%.2f', tres$statistic))
+  df$p[1] <- pval
+  df$d[1] <- weights::rd(dres$effsize, 2)
+  return(df)
+}
+#
+# extract ANOVA results including eta squared and put the results together as a table
+# -Note: needs the supernova library installed
+anova_tbl <- function(formula, data, type = 3, ...){
+  # perform ANOVA
+  d <- supernova::supernova(lm(as.formula(deparse(formula)), data = data), type = type)$tbl
+  # check whether ANOVA is univariate or factorial
+  univariate <- all(d$term %in% c("Model", "Error", "Total"))
+  # get rows of interest
+  if(univariate) {
+    effect_rows <- d$term %notin% c("Error", "Total")
+  } else {
+    effect_rows <- d$term %notin% c("Model", "Error", "Total")
+  }
+  # extract key parameters
+  effect <- d$term[effect_rows]
+  MSE <- round(d$MS[effect_rows], 2)
+  df <- d$df[effect_rows]
+  df_res <- d$df[d$term == "Error"]
+  statistic <- round(d$F[effect_rows], 2)
+  pval <- ifelse(d$p[effect_rows] < .001, " &lt; .001", weights::rd(d$p[effect_rows], 3))
+  eta <- ifelse(d$PRE[effect_rows] < .001, " &lt; .001", weights::rd(d$PRE[effect_rows], 3))
+  # construct return df
+  return(data.frame(effect, MSE, df, df_res, statistic, pval, eta))
+}
+# extract GLM results and put the results together as a table
+glm_tbl <- function(model, coef_digits = 2, coef_bold = TRUE, p_threshold = 0.05, ...){
+  # extract model parameters
+  if("tobit" %in% class(model)){ # tobit model -> broom::tidy does not work
+    res <- parameters::model_parameters(model)
+    res <- res[c("Parameter", "Coefficient", "SE", "z", "p")]
+    names(res) <- c("term", "estimate", "std.error", "statistic", "p.value")
+    # res[] <- lapply(res, function(x) { attributes(x) <- NULL; x })
+  } else {
+    res <- broom::tidy(model)
+  }
+  pvals <- res$p.value
+  res$estimate <- sprintf(paste0("%.", coef_digits, "f"), res$estimate)
+  res$std.error <- sprintf("%.3f", res$std.error)
+  res$statistic <- sprintf("%.2f", res$statistic)
+  # format p value
+  res$p.value <- ifelse(res$p.value < .001, " &lt; .001", weights::rd(res$p.value, 3))
+  # make estimates bold if below critical p value
+  if(coef_bold){
+    res$estimate[pvals < p_threshold] <- paste0("<b>", res$estimate[pvals < p_threshold], "</b>")
+    res$std.error[pvals < p_threshold] <- paste0("<b>", res$std.error[pvals < p_threshold], "</b>")
+    res$statistic[pvals < p_threshold] <- paste0("<b>", res$statistic[pvals < p_threshold], "</b>")
+    res$p.value[pvals < p_threshold] <- paste0("<b>", res$p.value[pvals < p_threshold], "</b>")
+  }
+  # bind R2 and Adj. R2 to model parameters
+  r2 <- performance::r2(model) # extract R2
+  end <- nrow(res) + seq_len(length(r2))
+  res[end,"term"] <- names(r2)
+  res[end,"estimate"] <- weights::rd(unlist(r2), digits = 3)
+  # return result
+  return(res)
+}
+```
+
+# Data preparation
+
+For each experiment, the data preparation steps included cleaning and preprocessing the survey data (from Qualtrics), the demographic data (from Prolific), and the pitch deck tracking data (from DocSend), respectively. Next, the three data sources were merged, the pre-registered exclusions were performed, and the final, processed datasets were saved. 
+
+Note that in this report, we load the de-identified and anonymized datasets. Please consult the [online repository](https://researchbox.org/1836) for the code that processed the raw data.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'replication_reports/data'
+
+# -----------------------------------------------------------------------------
+# Software startup
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'Study_2A_Software_Qualtrics.csv'))
+# convert fluency and quality conditions into factors
+d_qua$fluency_condition <- as.factor(d_qua$fluency_condition)
+d_qua$quality_condition <- as.factor(d_qua$quality_condition)
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, invest_prob = `invest_prob_1`,
+         attention_check_text = attention_check_99_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'Study_2A_Software_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`,
+         investment_types = `Types of investment`) |>
+  rename_at(vars(-ID), tolower)
+# remove age and sex from the data, since we explicitly asked this information
+# in Qualtrics
+d_pro_clean <- d_pro_clean |>
+  select(-age, -sex)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'Study_2A_Software_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = duration,
+         fluency_condition_docsend = fluency_condition,
+         quality_condition_docsend = quality_condition) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format,
+# multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey or
+# returned study submission)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, investment_types, ethnicity,
+                            country, nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully", 
+  "I have read this text carefully \n\n", 
+  "I have read this carefully", 
+  "'I have read this text carefully '", 
+  "I have read the text carefully",   
+  "i have read this carefully",       
+  "I have read this text carefully.", 
+  "I have read this text carefully\n", 
+  "I have read this textbcarefully", 
+  "I have read this text carefully' below",
+  "have read this text carefully" 
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "HR technology"))
+# condition from Qualtrics does not match DocSend condition
+d <- d |> filter(fluency_condition == fluency_condition_docsend &
+                   quality_condition == quality_condition_docsend)
+
+# save processed data
+d_sw <- d
+
+
+# -----------------------------------------------------------------------------
+# Software startup (replication)
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'Study_2B_Software_Replication_Qualtrics.csv'))
+# convert fluency and quality conditions into factors
+d_qua$fluency_condition <- as.factor(d_qua$fluency_condition)
+d_qua$quality_condition <- as.factor(d_qua$quality_condition)
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, invest_prob = `invest_prob_1`,
+         fluency = `fluency_1`, attention_check_text = attention_check_99_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'Study_2B_Software_Replication_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`,
+         investment_types = `Types of investment`) |>
+  rename_at(vars(-ID), tolower)
+# remove age and sex from the data, since we explicitly asked this information
+# in Qualtrics
+d_pro_clean <- d_pro_clean |>
+  select(-age, -sex)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'Study_2B_Software_Replication_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = duration,
+         fluency_condition_docsend = fluency_condition,
+         quality_condition_docsend = quality_condition) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format,
+# multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey or
+# returned study submission)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, investment_types, ethnicity,
+                            country, nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully",
+  "'I have read this text carefully'", 
+  "i have read this text carefully", 
+  "I have read this carefully", 
+  "I have read the text carefully",
+  "I have read this text carefully' below",
+  "I have read this ext carefully", 
+  "I have read this text carefully.", 
+  "I have read the text carefully.", 
+  "\"I have read this text carefully\"", 
+  "I have read read the text carefully"   
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "HR technology"))
+# condition from Qualtrics does not match DocSend condition
+d <- d |> filter(fluency_condition == fluency_condition_docsend &
+                   quality_condition == quality_condition_docsend)
+
+# save processed data
+d_sw_repl <- d
+
+
+# -----------------------------------------------------------------------------
+# Healthcare startup
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'Study_2C_Healthcare_Qualtrics.csv'))
+# convert fluency and quality conditions into factors
+d_qua$fluency_condition <- as.factor(d_qua$fluency_condition)
+d_qua$quality_condition <- as.factor(d_qua$quality_condition)
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(duration_study = `Duration (in seconds)`, invest_prob = `invest_prob_1`,
+         fluency = `fluency_1`, attention_check_text = attention_check_99_TEXT,
+         IP_address = IPAddress) |>
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'Study_2C_Healthcare_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(ethnicity = `Ethnicity simplified`, country = `Country of residence`,
+         employment = `Employment status`,
+         investment_types = `Types of investment`) |>
+  rename_at(vars(-ID), tolower)
+# remove age and sex from the data, since we explicitly asked this information
+# in Qualtrics
+d_pro_clean <- d_pro_clean |>
+  select(-age, -sex)
+
+# Pitch deck tracking data (DocSend)
+d_doc <- readr::read_csv(here(data_dir, 'Study_2C_Healthcare_DocSend.csv'))
+# make variable names more coding friendly
+d_doc_clean <- d_doc |>
+  rename(duration_pitch_deck = duration,
+         fluency_condition_docsend = fluency_condition,
+         quality_condition_docsend = quality_condition) |>
+  rename_at(vars(-ID), tolower)
+# duration is recorded in Excel timestamp format,
+# multiply by 86400 to convert to seconds
+d_doc_clean$duration_pitch_deck <- d_doc_clean$duration_pitch_deck * 86400
+
+# Merging the data
+# 
+# merge Qualtrics and Prolific data
+d_all <- merge(d_qua_clean, d_pro_clean, by = "ID", all = TRUE)
+# merge the DocSend data
+d_all <- merge(d_all, d_doc_clean, by = "ID", all = TRUE)
+# to make typing easier, let's call our data d
+d <- d_all
+rm(d_all, d_doc, d_doc_clean, d_pro, d_pro_clean, d_qua, d_qua_clean)
+
+# Exclusions
+#
+# participants did not give consent (or did not answer but closed survey or
+# returned study submission)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+d <- d |> tidyr::drop_na(!c(attention_check_text, investment_types, ethnicity,
+                            country, nationality, employment, device))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# duplicate Prolific IDs
+d <- d |> group_by(ID) |> filter(!(n()>1)) |> ungroup()
+# duplicate IP Address
+d <- d |> group_by(IP_address) |> filter(!(n()>1)) |> ungroup()
+# duration to complete survey more than 30 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 30 minutes = 1800 seconds
+d <- d |> filter(!(duration_study > 1800))
+# pitch deck opened for less than 30 seconds or more than 30 minutes
+d <- d |> filter(!(duration_pitch_deck < 30 | duration_pitch_deck > 1800))
+# less than 50% of pitch deck slides were viewed
+d <- d |> filter(!(completion < .5))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully.", 
+  "'I have read this text carefully", 
+  "I have read this text carefully", 
+  "i have read this text carefully", 
+  "'I have read this text carefully'", 
+  "I have read this carefully", 
+  "I have read this test carefully"
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+# participants failed comprehension check
+d <- d |> filter(!(comprehension_check != "Medical innovation"))
+# condition from Qualtrics does not match DocSend condition
+d <- d |> filter(fluency_condition == fluency_condition_docsend &
+                   quality_condition == quality_condition_docsend)
+
+# save processed data
+d_hc <- d
+# remove temporary objects
+rm(d)
+
+# rename variables
+d_sw |> rename(fluency = fluency_condition, quality = quality_condition) -> d_sw
+d_sw_repl |> rename(fluency_perception = fluency, quality_perception = quality,
+                    fluency = fluency_condition, quality = quality_condition) -> d_sw_repl
+d_hc |> rename(fluency_perception = fluency, quality_perception = quality,
+               fluency = fluency_condition, quality = quality_condition) -> d_hc
+```
+
+
+# Descriptives
+
+@tbl-obs gives a demographic overview of each dataset.
+Moreover, @tbl-randomization-check shows that even after having applied the pre-registered exclusion restrictions, the final cell sizes per conditions are fairly equal.
+@tbl-descriptives shows a descriptive breakdown of investment likelihood by visual fluency and substantive quality conditions.
+
+```{r}
+#| label: tbl-obs
+#| tbl-cap: 'Sample overview for all three online experiments'
+
+# combine data
+demo_all <- bind_rows(list(
+  Software = d_sw |> select(fluency, quality, age, gender, invest_experience, ethnicity, country, nationality, employment),
+  `Software Replication` = d_sw_repl |> select(fluency, quality, age, gender, invest_experience, ethnicity, country, nationality, employment),
+  Healthcare = d_hc |> select(fluency, quality, age, gender, invest_experience, ethnicity, country, nationality, employment)),
+  .id = "Startup")
+# convert Startup to factor, change order of levels
+demo_all$Startup <- factor(demo_all$Startup, levels = c("Software", "Software Replication", "Healthcare"))
+
+# create demographics table
+demo_all |> 
+  group_by(Startup) |> 
+  summarize(N = n(),
+            Age = round(mean(age, na.rm = T), 2),
+            `% Female`= round(prop.table(table(gender))["Female"]*100, 1),
+    `Investment Experience` = paste0(weights::rd(mean(invest_experience, na.rm = T), 2), " (±", weights::rd(sd(invest_experience, na.rm = T), 2), ")"),
+            `% White` = round(prop.table(table(ethnicity))["White"]*100, 1),
+            `% US` = round(prop.table(table(country))["United States"]*100, 1),
+            `% Full-Time Empl.` = round(prop.table(table(employment))["Full-Time"]*100, 1)
+            ) |> kbl() |> kable_styling()
+```
+
+```{r}
+#| label: tbl-randomization-check
+#| tbl-cap: 'Randomization check'
+demo_all |> group_by(Startup, Fluency = fluency, Quality = quality) |>
+  summarize(
+    `Final N per Condition` = scales::comma(n())
+  ) |> kbl() |> kable_styling() |> row_spec(c(4,8), extra_css = "border-bottom: 1px solid")
+```
+
+```{r}
+#| label: tbl-descriptives
+#| tbl-cap: 'Descriptive statistics'
+
+d_sw |> group_by(fluency, quality) |> summarize(N = n(), Mean = mean(invest_prob),
+          SD = sd(invest_prob)) -> temp_sw
+d_sw_repl |> group_by(fluency, quality) |> summarize(N = n(), Mean = mean(invest_prob),
+          SD = sd(invest_prob)) |> ungroup() |> select(N, Mean, SD) -> temp_sw_repl
+d_hc |> group_by(fluency, quality) |> summarize(N = n(), Mean = mean(invest_prob),
+          SD = sd(invest_prob)) |> ungroup() |> select(N, Mean, SD) -> temp_hc
+
+temp <- bind_cols(temp_sw, temp_sw_repl, temp_hc)
+names(temp) <- c("Fluency", "Quality", "N", "Mean", "SD", "N", "Mean", "SD", "N", "Mean", "SD")
+temp |> kbl(digits = 2,  escape = FALSE) |> kable_styling() |>
+  add_header_above(c(" " = 2, "Software Startup" = 3, "Software Startup (Replication)" = 3, "Healthcare Startup" = 3))
+```
+
+
+# Results
+
+In this section, we first report the main results of the experiments in which we manipulated both visual fluency and substantive quality in an 2x2 between-subjects experiment and measured the (self-reported) investment likelihood as the dependent variable.
+@sec-mc will and @sec-robustness then show the results of the manipulation and robustness checks, respectively.
+
+
+## Main analyses
+
+
+@tbl-results-ANOVA shows for each experiment the results of a factorial ANOVA that models stated investment likelihood as a function of the visual fluency condition and the substantive quality condition. Note that type III sum of squares were used, and the proportional reduction in error is reported as effect size (η<sub>p</sub><sup>2</sup> in the table).
+
+```{r}
+#| label: tbl-results-ANOVA
+#| tbl-cap: 'ANOVA results for stated investment likelihood'
+
+# combine data
+d <- bind_rows(list(
+  Software = d_sw,
+  `Software Replication` = d_sw_repl,
+  Healthcare = d_hc),
+  .id = "Startup")
+
+# convert Startup to factor, change order of levels
+d$Startup <- factor(d$Startup,
+                    levels = c("Software", "Software Replication", "Healthcare"),
+                    labels = c("Software", "Software (replication)", "Healthcare"))
+
+# convert conditions into factors
+d$fluency <- as.factor(d$fluency)
+d$quality <- as.factor(d$quality)
+
+# relevel factor levels
+d$quality <- relevel(d$quality, 'high')
+d$fluency <- relevel(d$fluency, 'high')
+
+# convert factor into effect coding
+contrasts(d$fluency) <- contr.sum
+contrasts(d$quality) <- contr.sum
+
+
+# combine results
+temp <- bind_rows(
+  anova_tbl(invest_prob ~ fluency * quality, d |> filter(Startup == "Software")),
+  anova_tbl(invest_prob ~ fluency * quality, d |> filter(Startup == "Software (replication)")),
+  anova_tbl(invest_prob ~ fluency * quality, d |> filter(Startup == "Healthcare"))
+  )
+
+temp |>
+  mutate(effect = rep(c("Fluency", "Quality", "Fluency × Quality"), 3)) |>
+  kbl(col.names = c("", "MSE", "df", "df<sub>res</sub>", "F", "p", "η<sub>p</sub><sup>2</sup>"),
+        align = "lcccccc", escape = FALSE) |>
+  kable_styling() |> 
+  pack_rows(index = c("Software Startup" = 3,
+                      "Software Startup (Replication)" = 3,
+                      "Healthcare Startup" = 3),
+            label_row_css = "text-align: center;") |>
+  row_spec(c(0,3,6,9), extra_css = "border-bottom: 1px solid")
+```
+
+
+## Manipulation checks {#sec-mc}
+
+In this section, we report the results of the manipulation checks for visual fluency and substantive quality (software startup replication and healthcare startup experiments). We conducted t-tests for each manipulation check, with either perceived fluency or perceived quality as the dependent variable and the visual fluency condition or the substantive quality condition as independent variables. The results are shown in @tbl-results-mc-1 for perceived fluency and @tbl-results-mc-2 for perceived quality. Note that we ran either Student's or Welch's t-test based on the result of Levene's test for homogeneous group variances.
+
+
+```{r}
+#| label: tbl-results-mc
+#| tbl-cap: 'Manipulation checks (software startup replication and healthcare startup)'
+#| tbl-subcap: 
+#|   - "Perceived fluency"
+#|   - "Perceived quality"
+#| layout-nrow: 2
+
+# perceived fluency
+bind_rows(
+  ttest_tbl(fluency_perception ~ fluency, d |> filter(Startup == "Software (replication)")),
+  ttest_tbl(fluency_perception ~ fluency, d |> filter(Startup == "Healthcare"))
+) |>
+  mutate(DV = rep(c("Perceived fluency", ""), 2)) |>
+  kbl(col.names = c("Outcome", "Fluency Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"), escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Software Startup (Replication)" = 2, "Healthcare Startup" = 2), label_row_css = "text-align: center;") |>
+  row_spec(c(0, 2), extra_css = "border-bottom: 1px solid")
+
+# perceived quality
+bind_rows(
+  ttest_tbl(quality_perception ~ quality, d |> filter(Startup == "Software (replication)")),
+  ttest_tbl(quality_perception ~ quality, d |> filter(Startup == "Healthcare"))
+) |>
+  mutate(DV = rep(c("Perceived quality", ""), 2)) |>
+  kbl(col.names = c("Outcome", "Quality Condition", "N", "Mean", "SD", "t-test", "p", "Cohen's d"), escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Software Startup (Replication)" = 2, "Healthcare Startup" = 2), label_row_css = "text-align: center;") |>
+  row_spec(c(0, 2), extra_css = "border-bottom: 1px solid")
+```
+
+
+
+## Robustness checks {#sec-robustness}
+
+As a robustness check, we estimated linear regression models in which we predicted the stated investment likelihood by visual fluency, substantive quality, age, gender, investment experience and the aesthetic sensitivity (CVPA composite score). In this regression, we again used effect coding for the two factors visual fluency and substantive quality. That is, for both variables, we coded `low` as `-1` and `high` as `+1`. @tbl-results-robust shows the results of this regression.
+
+```{r}
+#| label: tbl-results-robust
+#| tbl-cap: 'Robustness checks: Linear regressions for stated investment likelihood with individual-level control variables'
+
+# -- Note: We comment out Levene's tests of homogeneous group variances here for
+#          readability. However, we adapt the function call of the regression
+#          based on the result of Levene's tests.
+
+
+# Levene's test of homogeneous group variances -> if not, use robust::lmRob() below
+# 
+# # software startup
+# car::leveneTest(invest_prob ~ fluency, d |> filter(Startup == "Software")) # not significant
+# car::leveneTest(invest_prob ~ quality, d |> filter(Startup == "Software")) # not significant
+# car::leveneTest(invest_prob ~ fluency * quality, d |> filter(Startup == "Software")) # not significant
+# # software startup replication
+# car::leveneTest(invest_prob ~ fluency, d |> filter(Startup == "Software (replication)")) # not significant
+# car::leveneTest(invest_prob ~ quality, d |> filter(Startup == "Software (replication)")) # not significant
+# car::leveneTest(invest_prob ~ fluency * quality, d |> filter(Startup == "Software (replication)")) # not significant
+# # healthcare startup
+# car::leveneTest(invest_prob ~ fluency, d |> filter(Startup == "Healthcare")) # not significant
+# car::leveneTest(invest_prob ~ quality, d |> filter(Startup == "Healthcare")) # not significant
+# car::leveneTest(invest_prob ~ fluency * quality, d |> filter(Startup == "Healthcare")) # not significant
+
+# recode Likert text scores into numeric values for the CVPA score
+d |> mutate_at(vars(cvpa_v_1:cvpa_r_3), dplyr::recode,
+                   'Strongly disagree' = 1,
+                   'Disagree' = 2,
+                   'Neither agree nor disagree' = 3,
+                   'Agree' = 4,
+                   'Strongly agree' = 5) -> d
+# create CVPA composite score
+d <- d |> rowwise() |> mutate(CVPA = mean(cvpa_v_1:cvpa_r_3))
+
+# group "Non-binary" and "Prefer not to say" gender categories into one
+d$gender <- forcats::fct_collapse(d$gender, Female = "Female", Male = "Male", other_level = "Other")
+
+# run regression
+glm_tbl(lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA,
+             d |> filter(Startup == "Software"))) -> lm_rob_sw
+glm_tbl(lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA,
+             d |> filter(Startup == "Software (replication)"))) -> lm_rob_sw_repl
+glm_tbl(lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA,
+             d |> filter(Startup == "Healthcare"))) -> lm_rob_hc
+
+# add empty row for `genderOther` in the first and third regression
+lm_rob_sw |> add_row(.before = 6)  -> lm_rob_sw
+lm_rob_hc |> add_row(.before = 6)  -> lm_rob_hc
+
+
+temp <- bind_cols(lm_rob_sw, lm_rob_sw_repl[,-1], lm_rob_hc[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Age",
+               "Gender [Male]", "Gender [Other]",
+               "Investment experience", "Aesthetic sensitivity",
+               "Fluency × Quality", "R<sup>2</sup>", "R<sup>2</sup><sub>adj.</sub>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "t", "p"), 3))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccccccc") |> 
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Software Startup" = 4, "Software Startup (Replication)" = 4, "Healthcare Startup" = 4)) |>
+  row_spec(c(0,9), extra_css = "border-bottom: 1px solid")
+```
+
+# Plots
+
+@fig-main shows the main result of the experiments visually. The figure shows the predicted investment likelihood for each condition, separately for all three experiments. The error bars represent the 95% confidence intervals, and significance brackets represent post-hoc contrasts with Holm (1979) correction.
+
+```{r}
+#| label: fig-main
+#| fig-cap: Stated likelihood to invest by visual fluency and substantive quality
+#| fig-width: 16
+#| fig-asp: 0.5
+#| out-width: 100%
+
+# Helper functions and aesthetics
+#
+# pval function
+pval <- function(p, stars = TRUE){
+  if(stars){
+    if(p < .001) return("***")
+    if(p < .01) return("**")
+    if(p < .05) return("*")
+    if(p >= .05) return("NS")
+  } else{
+    scales::pvalue(p, prefix = c("p < ", "p = ", "p > "))
+  }
+}
+# aesthetics
+#
+# define colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+# theme settings
+my_style <- list(hrbrthemes::theme_ipsum_rc(),
+                 scale_fill_manual(values=c(blue_light, blue_dark)))
+my_theme <- theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = .5),
+        axis.title.y = element_text(size = 12, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 12, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        )
+# set up titles, axis names etc.
+my_labs <- labs(
+  x = "Quality", 
+  shape='Fluency'
+)
+
+
+# figure: software startup
+#
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_soft <- d_sw
+# convert fluency and quality to factor vars
+d_soft$fluency <- factor(d_soft$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_soft$quality <- factor(d_soft$quality, levels = c("low", "high"), labels = c("Low", "High"))
+
+# create dataset for post-hoc contrasts
+# --Note: We create a special dataset since we need to change the reference
+#         level of the factor variables before switching to effect coding to 
+#         keep the direction of the effects as intended
+d_soft_analysis <- d_soft
+d_soft_analysis$fluency <- relevel(d_soft_analysis$fluency, ref = 2)
+d_soft_analysis$quality <- relevel(d_soft_analysis$quality, ref = 2)
+# switch to effect coding
+contrasts(d_soft_analysis$fluency) <- contr.sum # High = 1, Low = -1
+contrasts(d_soft_analysis$quality) <- contr.sum
+
+# FIGURE FOR INVESTMENT LIKELIHOOD
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(invest_prob ~ fluency * quality, d_soft_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+invest_1 <- ggplot(d_soft, aes(x=quality, y=invest_prob, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Investment likelihood",
+       title = "<b>Software startup</b><br>
+       <span style='color:gray45; font-size:12pt'>(Study 2A)</span>",
+       fill = "Fluency") +
+  theme(plot.title = element_markdown(face = "plain")) + 
+  coord_cartesian(ylim=c(0, 75)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = 55,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = 61.5,
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+# figure: software startup (replication)
+#
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_soft_rep <- d_sw_repl
+# convert fluency and quality to factor vars
+d_soft_rep$fluency <- factor(d_soft_rep$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_soft_rep$quality <- factor(d_soft_rep$quality, levels = c("low", "high"), labels = c("Low", "High"))
+
+# create dataset for post-hoc contrasts
+# --Note: We create a special dataset since we need to change the reference
+#         level of the factor variables before switching to effect coding to 
+#         keep the direction of the effects as intended
+d_soft_rep_analysis <- d_soft_rep
+d_soft_rep_analysis$fluency <- relevel(d_soft_rep_analysis$fluency, ref = 2)
+d_soft_rep_analysis$quality <- relevel(d_soft_rep_analysis$quality, ref = 2)
+# switch to effect coding
+contrasts(d_soft_rep_analysis$fluency) <- contr.sum # High = 1, Low = -1
+contrasts(d_soft_rep_analysis$quality) <- contr.sum
+
+# FIGURE FOR INVESTMENT LIKELIHOOD
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(invest_prob ~ fluency * quality, d_soft_rep_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+invest_2 <- ggplot(d_soft_rep, aes(x=quality, y=invest_prob, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Investment likelihood",
+       title = "<b>Software startup (replication)</b>
+       <br><span style='color:gray45; font-size:12pt'>(Study 2B)</span>",
+       fill = "Fluency") +    
+  theme(plot.title = element_markdown(face = "plain")) +
+  coord_cartesian(ylim=c(0, 75)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = 55,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = c(65),
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+
+# figure: healthcare startup
+#
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_health <- d_hc
+# convert fluency and quality to factor vars
+d_health$fluency <- factor(d_health$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_health$quality <- factor(d_health$quality, levels = c("low", "high"), labels = c("Low", "High"))
+
+# create dataset for post-hoc contrasts
+# --Note: We create a special dataset since we need to change the reference
+#         level of the factor variables before switching to effect coding to 
+#         keep the direction of the effects as intended
+d_health_analysis <- d_health
+d_health_analysis$fluency <- relevel(d_health_analysis$fluency, ref = 2)
+d_health_analysis$quality <- relevel(d_health_analysis$quality, ref = 2)
+# switch to effect coding
+contrasts(d_health_analysis$fluency) <- contr.sum # High = 1, Low = -1
+contrasts(d_health_analysis$quality) <- contr.sum
+
+# FIGURE FOR INVESTMENT LIKELIHOOD
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(invest_prob ~ fluency * quality, d_health_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+invest_3 <- ggplot(d_health, aes(x=quality, y=invest_prob, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Investment likelihood",
+       title = "<b>Healthcare startup</b><br>
+       <span style='color:gray45; font-size:12pt'>(Study 2C)</span>",
+       fill = "Fluency") +
+  theme(plot.title = element_markdown(face = "plain")) +
+  coord_cartesian(ylim=c(0, 75)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = 61.5,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = c(72.5),
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+
+# final (combined) figure
+invest_1 + invest_2 + invest_3 + plot_layout(guides = 'collect') +
+  plot_annotation(
+  title = "<b>Stated likelihood to invest in the startup</b>",
+  subtitle = "as a function of quality and fluency (Study 2)",
+  caption = "Note: Error bars indicate 95% confidence intervals around the mean. Significance brackets represent post-hoc contrasts with Holm (1979) correction.",
+  # tag_levels = 'A'
+) & theme(
+  plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption = element_text(hjust=.5, family = "Roboto Condensed", margin = margin(t = -10, r = 0, b = 0, l = 0)),
+)
+```
+

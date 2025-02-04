@@ -1,0 +1,1975 @@
+---
+title: "Field Experiment"
+subtitle: "Replication Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    code-fold: true
+    code-tools: false
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+    appendix-style: plain
+execute:
+  warning: false
+  message: false
+---
+
+<!--
+# Last update: 04-02-2025
+# Author: <blinded for review>
+-->
+
+# Introduction {#sec-intro}
+
+In our main study, we ran a field experiment in which we varied the visual fluency and the substantive quality of pitch decks of our two fictitious startups (Software: **PerkSouq**; Healthcare: **Brachytix**).
+
+Specifically, we sent out a standardized email to 39,977 potential investors (24,961 for the software startup and 15,016 for healthcare startup), and tracked whether the potential investor clicks on the link to the pitch deck.
+Every investor who clicked the link within 21 days of receiving the email was potentially part of our sample (pending exclusion restrictions). All data that was recorded within 21 days after an investor clicked on the link to the pitch deck was considered for analysis.
+
+Depending on their previous investment record, investors were matched to either the software startup or healthcare startup, then randomly assigned to one of the four experimental conditions. We pretested all the manipulations.
+We tracked whether an investor clicked on the link to the pitch deck, the cumulative time the pitch deck remained open, the percentage of slides viewed, and whether there was a positive reaction to the email.
+A reaction was considered positive if a meeting appointment was scheduled over a link in the deck and / or an email reply has been sent that clearly demonstrated investor interest.[^emails] Participants were not aware that they took part in a scientific study and that the startups were fictitious.
+
+For more details, e.g., on the exclusion criteria that we used, see the corresponding [AsPredicted](https://aspredicted.org) pre-registration listed in @tbl-prereg.
+
+|Startup                | Pre-Reg Date | AsPredicted # | Data Collection Start | 
+|:----------------------|:-----------:|:-------------:|:---------------:|
+|PerkSouq & Brachytix   | 13-01-2023  | [118675](https://aspredicted.org/CSW_2W8)        | 16-01-2023      |
+: Overview Pre-Registration {#tbl-prereg}
+
+In what follows, we will give an overview of the results, separately for each startup, followed by figures that summarize the results of the field experiment.
+As this report is dynamically created with R and Quarto, we also report all code.
+However, for the sake of readability, the code itself is folded by default and only the results relevant for the questions at hand are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggtext)
+library(ggsankey)
+library(ggsignif)
+library(patchwork)
+library(kableExtra)
+options(knitr.kable.NA = '',
+        kable_styling_bootstrap_options = c("striped", "condensed", "responsive"))
+
+# further packages that are loaded on demand are:
+# - supernova
+# - weights
+# - parameters
+# - broom
+# - scales
+# - performance
+# - readr
+# - lubridate
+# - stringr
+# - tidyr
+# - irr
+# - AER
+# - hrbrthemes
+# - grid
+# - gridExtra
+
+
+
+# Custom functions
+#
+# negate %in%
+`%notin%` <- Negate(`%in%`)
+#
+# extract ANOVA results including eta squared and put the results together as a table
+# -Note: needs the supernova library installed
+anova_tbl <- function(formula, data, type = 3, ...){
+  # perform ANOVA
+  d <- supernova::supernova(lm(as.formula(deparse(formula)), data = data), type = type)$tbl
+  # check whether ANOVA is univariate or factorial
+  univariate <- all(d$term %in% c("Model", "Error", "Total"))
+  # get rows of interest
+  if(univariate) {
+    effect_rows <- d$term %notin% c("Error", "Total")
+  } else {
+    effect_rows <- d$term %notin% c("Model", "Error", "Total")
+  }
+  # extract key parameters
+  effect <- d$term[effect_rows]
+  MSE <- round(d$MS[effect_rows], 2)
+  df <- d$df[effect_rows]
+  df_res <- d$df[d$term == "Error"]
+  statistic <- round(d$F[effect_rows], 2)
+  pval <- ifelse(d$p[effect_rows] < .001, " &lt; .001", weights::rd(d$p[effect_rows], 3))
+  eta <- ifelse(d$PRE[effect_rows] < .001, " &lt; .001", weights::rd(d$PRE[effect_rows], 3))
+  # construct return df
+  return(data.frame(effect, MSE, df, df_res, statistic, pval, eta))
+}
+# extract GLM results and put the results together as a table
+glm_tbl <- function(model, coef_digits = 2, coef_bold = TRUE, p_threshold = 0.05, ...){
+  # extract model parameters
+  if("tobit" %in% class(model)){ # tobit model -> broom::tidy does not work
+    res <- parameters::model_parameters(model)
+    res <- res[c("Parameter", "Coefficient", "SE", "z", "p")]
+    names(res) <- c("term", "estimate", "std.error", "statistic", "p.value")
+    # res[] <- lapply(res, function(x) { attributes(x) <- NULL; x })
+  } else {
+    res <- broom::tidy(model)
+  }
+  pvals <- res$p.value
+  res$estimate <- sprintf(paste0("%.", coef_digits, "f"), res$estimate)
+  res$std.error <- sprintf("%.3f", res$std.error)
+  res$statistic <- sprintf("%.2f", res$statistic)
+  # format p value
+  res$p.value <- ifelse(res$p.value < .001, " &lt; .001", weights::rd(res$p.value, 3))
+  # make estimates bold if below critical p value
+  if(coef_bold){
+    res$estimate[pvals < p_threshold] <- paste0("<b>", res$estimate[pvals < p_threshold], "</b>")
+    res$std.error[pvals < p_threshold] <- paste0("<b>", res$std.error[pvals < p_threshold], "</b>")
+    res$statistic[pvals < p_threshold] <- paste0("<b>", res$statistic[pvals < p_threshold], "</b>")
+    res$p.value[pvals < p_threshold] <- paste0("<b>", res$p.value[pvals < p_threshold], "</b>")
+  }
+  # bind R2 and Adj. R2 to model parameters
+  r2 <- performance::r2(model) # extract R2
+  end <- nrow(res) + seq_len(length(r2))
+  res[end,"term"] <- names(r2)
+  res[end,"estimate"] <- weights::rd(unlist(r2), digits = 3)
+  # return result
+  return(res)
+}
+```
+
+# Data preparation
+
+For each experiment, the data preparation steps included loading, cleaning, and merging the pitch deck tracking data (from DocSend), the meeting appointment / email replies data, the information about when we send whom the email, and the information about the investors themselves (which we collected prior to our emails).
+
+After merging, the pre-registered exclusions were performed, and the final, cleaned datasets were saved.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'replication_reports/data'
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+ 
+# -----------------------------------------------------------------------------
+# Software startup
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Email data
+emails <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Emails.csv'))
+# convert date (format is dd month yyyy) using lubridate::as_date()
+emails$date_sent <- lubridate::as_date(emails$date_sent, format = "%d%b%Y")
+emails$date_cutoff_click <- lubridate::as_date(emails$date_cutoff_click, format = "%d%b%Y")
+emails$date_cutoff_activity <- lubridate::as_date(emails$date_cutoff_activity, format = "%d%b%Y")
+
+# Message IDs
+message_ids <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Message_IDs.csv'))
+
+# Participant data
+participants <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Participants.csv'))
+# extract fluency and quality condition info using stringr::str_split
+# --Note: the coding in the treatment variable was as follows:
+#         fluency condition/quality condition
+participants$fluency <- stringr::str_split(participants$treatment, "/", simplify = TRUE)[,1]
+participants$quality <- stringr::str_split(participants$treatment, "/", simplify = TRUE)[,2]
+
+# Replies
+replies <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Replies.csv'))
+# convert date (format is dd month yyyy)
+replies$date_reply <- lubridate::as_date(replies$date_reply, format = "%d%b%Y")
+
+# Replies (coded)
+replies_coded <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Replies_coded.csv'))
+# NOTE:
+# - final coding is stored in variable "final_vote" (0 = not positive, 1 = positive)
+# - final category is stored in variable "final_category_standardized"
+# 
+# here, we rename the variables for coding ease and consistency
+replies_coded |>
+  rename(positive = final_vote, category = final_category_standardized) -> replies_coded
+
+# Visits
+visits <- readr::read_csv(here(data_dir, 'Study_1-1_Software_Visits.csv'))
+# convert date (format is dd month yyyy)
+visits$date_visit <- lubridate::as_date(visits$date_visit, format = "%d%b%Y")
+# since we might have multiple visits per ID (i.e., per mail recipient), 
+# we need to create a variable that indicates the first visit
+# because we have exclusion criteria based on this variable.
+# note that we filter for atypical visits (as pre-registered).
+#
+# create variable "date_first_click" for each uuid
+visits |> filter(atypical != 1) |> group_by(uuid) |> summarize(date_first_click = min(date_visit)) |> ungroup() -> temp
+visits <- left_join(visits, temp, by = "uuid"); rm(temp)
+# if there is no uuid (e.g., because of atypical visit), then the variable should be NA
+visits$date_first_click[is.na(visits$uuid)] <- NA 
+
+
+# Exclusions (Part 1)
+#
+# pre-registered exclusions for the individual viewing sessions
+#
+# remove atypical visits
+visits |> filter(atypical != 1) -> visits
+# remove any participant where the uuid is not part of our sample or no uuid recorded (i.e, NA)
+visits |> tidyr::drop_na(uuid) -> visits
+visits <- visits[visits$uuid %in% emails$uuid, ]
+# keep only observations for which first click occurred within 21 days of receiving the email
+# (here, we need to merge the date info from the emails first)
+visits |> left_join(emails |> select(uuid, date_sent), by = "uuid") -> visits
+visits |> filter(date_first_click < (date_sent + 21)) -> visits
+# keep only data within 21 days after participant has clicked
+visits |> filter(date_visit < (date_first_click + 21)) -> visits
+# now we can aggregate the individual viewing sessions per participant
+#
+# aggregate DVs per uuid: sum for duration, max for completion
+visits |>
+  group_by(uuid) |>
+  summarize(
+    duration = sum(duration),
+    completion = max(completion),
+    date_sent = unique(date_sent),
+    date_first_click = unique(date_first_click)) |>
+  ungroup() -> visits_agg
+
+
+# Merging the data
+# 
+# we start with the aggregated visits data and subsequently merge the other datasets
+# --Note: the variable "uuid" is the unique identifier for each observation
+#
+# merge aggregated visits data with participant data
+# --Note: only relevant columns are selected in the merge
+visits_agg |> left_join(
+  participants |> select(uuid, type, gender, investments, location, region, fluency, quality),
+  by = "uuid") -> d
+# merge coded replies into replies
+#
+# first add uuid to coded replies (from message_ids)
+replies_coded <- left_join(replies_coded, message_ids, by = "message_id")
+# now merge info to replies
+replies_coded |>
+  select(positive, category, uuid) |>
+  right_join(replies, by = "uuid") -> replies
+# merge replies into main data
+d <- left_join(d, replies, by = "uuid")
+# NOTE: replies data only contained data from participants who replied.
+#       thus, after merging, we have NAs for those who did not reply.
+#       we need to set these to 0.
+#
+# set default for reply as 0 instead of NA
+d <- tidyr::replace_na(d, list(reply = 0)) # no reply = 0
+# now, we differentiate between positive replies relative to all who replied
+# and positive replies relative to all who clicked the link.
+#
+# so far, the variable positive contains 1 if the reply was positive and 0 otherwise,
+# and NA if there was no reply. we keep this information and call this
+# variable "positive_given_reply".
+#
+# for the second variable, we set all NAs to 0, resulting in a variable that
+# describes positive replies relative to all who clicked the link. we call this
+# variable just "positive". this variable thus is 1 if the reply was positive
+# and 0 in all other cases (i.e., also for no reply).
+d |> mutate(positive_given_reply = positive) -> d # reply rate relative to subset of those who replied
+d <- tidyr::replace_na(d, list(positive = 0))            # reply rate relative to all who clicked link
+
+
+# Exclusions (Part 2)
+#
+# pitch deck opened for less than 3 seconds or more than 30 minutes
+# --Note: `duration` was measured in seconds
+#         thus 30 minutes = 1800 seconds
+d |> filter(!(duration < 3 | duration > 1800)) -> d
+# keep only participants with reply within 21 days after first click
+d |> filter(is.na(date_reply) | date_reply < (date_first_click + 21)) -> d
+
+# save processed data
+d_sw <- d
+# we also need the original visits and mails data for some descriptive statistics
+visits_sw <- visits
+emails_sw <- emails
+replies_coded_sw <- replies_coded
+
+
+# Sankey plot data
+#
+# we need to create a separate dataset for the sankey plot since we need to
+# aggregate the data at a different level (that is, at the investor level)
+
+# first, we need to merge visits and replies and set the exclusion criteria
+visits_agg |> 
+  select(uuid, date_first_click, duration) |>
+  left_join(replies |> select(uuid, date_reply, positive, category), by = "uuid") |>
+  # exclusions
+  # (1) keep only participants with reply within 21 days after first click
+  filter(is.na(date_reply) | date_reply < (date_first_click + 21)) |>
+  # (2) pitch deck opened for less than 3 seconds or more than 30 minutes
+  filter(!(duration < 3 | duration > 1800)) -> sankey_temp
+
+# now we aggregate the data at the investor level
+participants |>
+  select(uuid, `Investor type`=type) |>
+  # merge hard bounce info
+  left_join(emails |> select(uuid, hard_bounce), by = "uuid") |>
+  # merge email opened, reply and category info (from temp data from before)
+  # then save the data (and remove the temp data)
+  left_join(sankey_temp |> select(uuid, date_first_click, date_reply, positive, category),
+            by = "uuid") -> sankey_soft
+
+
+
+# -----------------------------------------------------------------------------
+# Healthcare startup
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Email data
+emails <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Emails.csv'))
+# convert date (format is dd month yyyy) using lubridate::lubridate::as_date()
+emails$date_sent <- lubridate::as_date(emails$date_sent, format = "%d%b%Y")
+emails$date_cutoff_click <- lubridate::as_date(emails$date_cutoff_click, format = "%d%b%Y")
+emails$date_cutoff_activity <- lubridate::as_date(emails$date_cutoff_activity, format = "%d%b%Y")
+
+# Message IDs
+message_ids <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Message_IDs.csv'))
+
+# Participant data
+participants <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Participants.csv'))
+# extract fluency and quality condition info using stringr::str_split
+# --Note: the coding in the treatment variable was as follows:
+#         fluency condition/quality condition
+participants$fluency <- stringr::str_split(participants$treatment, "/", simplify = TRUE)[,1]
+participants$quality <- stringr::str_split(participants$treatment, "/", simplify = TRUE)[,2]
+
+# Replies
+replies <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Replies.csv'))
+# convert date (format is dd month yyyy)
+replies$date_reply <- lubridate::as_date(replies$date_reply, format = "%d%b%Y")
+
+# Replies (coded)
+replies_coded <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Replies_coded.csv'))
+# NOTE:
+# - final coding is stored in variable "final_vote" (0 = not positive, 1 = positive)
+# - final category is stored in variable "final_category_standardized"
+# 
+# here, we rename the variables for coding ease and consistency
+replies_coded |>
+  rename(positive = final_vote, category = final_category_standardized) -> replies_coded
+
+# Visits
+visits <- readr::read_csv(here(data_dir, 'Study_1-2_Healthcare_Visits.csv'))
+# convert date (format is dd month yyyy)
+visits$date_visit <- lubridate::as_date(visits$date_visit, format = "%d%b%Y")
+# since we might have multiple visits per ID (i.e., per mail recipient), 
+# we need to create a variable that indicates the first visit
+# because we have exclusion criteria based on this variable
+# note that we filter for atypical visits (as pre-registered).
+#
+# create variable "date_first_click" for each uuid
+visits |> filter(atypical != 1) |> group_by(uuid) |> summarize(date_first_click = min(date_visit)) |> ungroup() -> temp
+visits <- left_join(visits, temp, by = "uuid"); rm(temp)
+# if there is no uuid (e.g., because of atypical visit), then the variable should be NA
+visits$date_first_click[is.na(visits$uuid)] <- NA 
+
+
+# Exclusions (Part 1)
+#
+# pre-registered exclusions for the individual viewing sessions
+#
+# remove atypical visits
+visits |> filter(atypical != 1) -> visits
+# remove any participant where the uuid is not part of our sample or no uuid recorded (i.e, NA)
+visits |> tidyr::drop_na(uuid) -> visits
+visits <- visits[visits$uuid %in% emails$uuid, ]
+# keep only observations for which first click occurred within 21 days of receiving the email
+# (here, we need to merge the date info from the emails first)
+visits |> left_join(emails |> select(uuid, date_sent), by = "uuid") -> visits
+visits |> filter(date_first_click < (date_sent + 21)) -> visits
+# keep only data within 21 days after participant has clicked
+visits |> filter(date_visit < (date_first_click + 21)) -> visits
+# now we can aggregate the individual viewing sessions per participant
+#
+# aggregate DVs per uuid: sum for duration, max for completion
+visits |>
+  group_by(uuid) |>
+  summarize(
+    duration = sum(duration),
+    completion = max(completion),
+    date_sent = unique(date_sent),
+    date_first_click = unique(date_first_click)) |>
+  ungroup() -> visits_agg
+
+
+# Merging the data
+# 
+# we start with the aggregated visits data and subsequently merge the other datasets
+# --Note: the variable "uuid" is the unique identifier for each observation
+
+# merge aggregated visits data with participant data
+# --Note: only relevant columns are selected in the merge
+visits_agg |> left_join(
+  participants |> select(uuid, type, gender, investments, location, region, fluency, quality),
+  by = "uuid") -> d
+# merge coded replies into replies
+#
+# first add uuid to coded replies (from message_ids)
+replies_coded <- left_join(replies_coded, message_ids, by = "message_id")
+# now merge info to replies
+replies_coded |>
+  select(positive, category, uuid) |>
+  right_join(replies, by = "uuid") -> replies
+# merge replies into main data
+d <- left_join(d, replies, by = "uuid")
+
+# NOTE: replies data only contained data from participants who replied.
+#       thus, after merging, we have NAs for those who did not reply.
+#       we need to set these to 0.
+#
+# set default for reply as 0 instead of NA
+d <- tidyr::replace_na(d, list(reply = 0)) # no reply = 0
+# now, we differentiate between positive replies relative to all who replied
+# and positive replies relative to all who clicked the link.
+#
+# so far, the variable positive contains 1 if the reply was positive and 0 otherwise,
+# and NA if there was no reply. we keep this information and call this
+# variable "positive_given_reply".
+#
+# for the second variable, we set all NAs to 0, resulting in a variable that
+# describes positive replies relative to all who clicked the link. we call this
+# variable just "positive". this variable thus is 1 if the reply was positive
+# and 0 in all other cases (i.e., also for no reply).
+d |> mutate(positive_given_reply = positive) -> d # reply rate relative to subset of those who replied
+d <- tidyr::replace_na(d, list(positive = 0))            # reply rate relative to all who clicked link
+
+
+# Exclusions (Part 2)
+#
+# pitch deck opened for less than 3 seconds or more than 30 minutes
+# --Note: `duration` was measured in seconds
+#         thus 30 minutes = 1800 seconds
+d |> filter(!(duration < 3 | duration > 1800)) -> d
+# keep only participants with reply within 21 days after first click
+d |> filter(is.na(date_reply) | date_reply < (date_first_click + 21)) -> d
+
+# save processed data
+d_hc <- d
+# we also need the original visits and mails data for some descriptive statistics
+visits_hc <- visits
+emails_hc <- emails
+replies_coded_hc <- replies_coded
+
+
+# Sankey plot data
+#
+# we need to create a separate dataset for the sankey plot since we need to
+# aggregate the data at a different level (that is, at the investor level)
+
+# first, we need to merge visits and replies and set the exclusion criteria
+visits_agg |> 
+  select(uuid, date_first_click, duration) |>
+  left_join(replies |> select(uuid, date_reply, positive, category), by = "uuid") |>
+  # exclusions
+  # (1) keep only participants with reply within 21 days after first click
+  filter(is.na(date_reply) | date_reply < (date_first_click + 21)) |>
+  # (2) pitch deck opened for less than 3 seconds or more than 30 minutes
+  filter(!(duration < 3 | duration > 1800)) -> sankey_temp
+
+# now we aggregate the data at the investor level
+participants |>
+  select(uuid, `Investor type`=type) |>
+  # merge hard bounce info
+  left_join(emails |> select(uuid, hard_bounce), by = "uuid") |>
+  # merge email opened, reply and category info (from temp data from before)
+  # then save the data (and remove the temp data)
+  left_join(sankey_temp |> select(uuid, date_first_click, date_reply, positive, category),
+            by = "uuid") -> sankey_health
+
+
+# remove temporary objects
+rm(d, emails, message_ids, participants, replies, replies_coded, visits,
+   visits_agg, sankey_temp)
+```
+
+
+```{r}
+#| label: agreement
+#| include: false
+
+# agreement between the raters (software startup)
+# 
+# percent agreement (`agree` from the `irr` package)
+agreed_sw <- irr::agree(cbind(replies_coded_sw$positive_RA1, replies_coded_sw$positive_RA2))$value
+# Cohen's kappa (`kappa2` from the `irr` package)
+kappa_sw <- irr::kappa2(cbind(replies_coded_sw$positive_RA1, replies_coded_sw$positive_RA2))$value
+
+# agreement between the raters (healthcare startup)
+# 
+# percent agreement (`agree` from the `irr` package)
+agreed_hc <- irr::agree(cbind(replies_coded_hc$positive_RA1, replies_coded_hc$positive_RA2))$value
+# Cohen's kappa (`kappa2` from the `irr` package)
+kappa_hc <- irr::kappa2(cbind(replies_coded_hc$positive_RA1, replies_coded_hc$positive_RA2))$value
+
+```
+
+
+[^emails]: Two independent raters blind to our hypotheses rated all email replies as to whether the content demonstrates investor interest. For the software startup, the interrater agreement was `r sprintf('%.2f', agreed_sw)`% (Cohen's κ = `r sprintf('%.3f', kappa_sw)`). For the healthcare startup, the interrater agreement was `r sprintf('%.2f', agreed_hc)`% (Cohen's κ = `r sprintf('%.3f', kappa_hc)`). All cases for which the raters did not agree were resolved by the authors of this paper.
+
+
+# Descriptives
+
+```{r response-rates, include=FALSE}
+# compute the response rates without any exclusions (except no uuid recorded or
+# not part of our sample or atypical visit)
+
+# software startup
+visits_sw |>
+  filter((uuid %in% emails_sw$uuid) & atypical != 1) |>
+  distinct(uuid) |>
+  summarize(n()) |>
+  pull() -> n_visits_full_sw
+emails_sw |> filter(hard_bounce != 1) |> summarize(N=n()) |> pull() -> n_mails_sw
+
+# healthcare startup
+visits_hc |>
+  filter((uuid %in% emails_hc$uuid) & atypical != 1) |>
+  distinct(uuid) |>
+  summarize(n()) |>
+  pull() -> n_visits_full_hc
+emails_hc |> filter(hard_bounce != 1) |> summarize(N=n()) |> pull() -> n_mails_hc
+```
+
+@tbl-obs gives an overview of the sample. Further descriptives and analyses are reported separately for each startup and each experiment in the following sections. In addition, @fig-sankey-1 and @fig-sankey-2 in @sec-plots depict each sample’s flow as a Sankey diagram.
+
+Note that the final click rates
+(`r sprintf('%.1f', nrow(d_sw) / n_mails_sw * 100)`% software startup; 
+`r sprintf('%.1f', nrow(d_hc) / n_mails_hc * 100)`% healthcare startup) 
+are after having applied the pre-registered exclusion restrictions. The initial click rates were 
+`r sprintf('%.1f', n_visits_full_sw / n_mails_sw * 100)`% for the software startup and 
+`r sprintf('%.1f', n_visits_full_hc / n_mails_hc * 100)`% for the healthcare startup. Also note that the final number of emails sent (`r scales::comma(n_mails_sw)` software; `r scales::comma(n_mails_hc)` healthcare) is smaller than originally intended (cf. @sec-intro) due to hard bounces (e.g., email address no longer valid).
+
+Moreover, @tbl-randomization-check shows that even after having applied the pre-registered exclusion restrictions, the click rates and final cell sizes per conditions are fairly equal.
+
+```{r}
+#| label: tbl-obs
+#| tbl-cap: 'Sample overview for the two field experiments'
+
+# how many mails were successfully sent (i.e., remove hard bounces)
+emails_sw |> filter(hard_bounce != 1) |> summarize(N=n()) |> pull() -> n_mails_sw
+emails_hc |> filter(hard_bounce != 1) |> summarize(N=n()) |> pull() -> n_mails_hc
+
+# combine data
+sample_overview <- bind_rows(list(
+  Software = d_sw |> select(Fluency = fluency, Quality = quality, gender, investments, type, location, reply, positive) |> mutate(n_mails = n_mails_sw),
+  Healthcare = d_hc |> select(Fluency = fluency, Quality = quality, gender, investments, type, location, reply, positive) |> mutate(n_mails = n_mails_hc)),
+  .id = "Startup")
+# convert Startup to factor, change order of levels
+sample_overview$Startup <- factor(sample_overview$Startup, levels = c("Software", "Healthcare"))
+
+# create table
+sample_overview |> 
+  group_by(Startup) |> 
+  summarize(
+    `Emails ` = scales::comma(mean(n_mails)),
+    `% Click Rate` = sprintf('%.1f', mean(n() / n_mails)*100),
+    `Final N` = scales::comma(n()),
+    `Replies ` = scales::comma(sum(reply)),
+    `Pos. Replies ` = scales::comma(sum(positive)),
+    `% Female`= round(prop.table(table(gender))["female"]*100, 1),
+    `Avg. Investments` = paste0(weights::rd(mean(investments, na.rm = T), 2), " (±", weights::rd(sd(investments, na.rm = T), 2), ")"),
+    `% Angel Investor` = round(prop.table(table(type))["Angel"]*100, 1),
+    `% US` = round(prop.table(table(location))["United States"]*100, 1)
+  ) |> kbl() |> kable_styling()
+```
+
+```{r}
+#| label: tbl-randomization-check
+#| tbl-cap: 'Randomization check'
+#| warning: false
+#| message: false
+
+# extract number of emails sent per condition
+#
+# first combine raw email data (excluding hard bounces)
+emails <- bind_rows(list(
+  Software = emails_sw,
+  Healthcare = emails_hc),
+  .id = "Startup") |> filter(hard_bounce != 1)
+# next, extract fluency and quality condition info using stringr::str_split
+# --Note: the coding in the treatment variable was as follows:
+#         fluency condition/quality condition
+emails$Fluency <- stringr::str_split(emails$treatment, "/", simplify = TRUE)[,1]
+emails$Quality <- stringr::str_split(emails$treatment, "/", simplify = TRUE)[,2]
+# convert Startup to factor, change order of levels
+emails$Startup <- factor(emails$Startup, levels = c("Software", "Healthcare"))
+# get the number of emails sent per condition, and add this info to the sample_overview
+emails |> group_by(Startup, Fluency, Quality) |> summarize(n_mails = n()) |>
+  ungroup() |>  right_join(sample_overview |> select(-n_mails), by = c("Startup", "Fluency", "Quality")) -> sample_overview
+
+sample_overview |> group_by(Startup, Fluency, Quality) |>
+  summarize(
+    `Emails ` = scales::comma(mean(n_mails)),
+    `% Click Rate` = sprintf('%.2f', mean(n() / n_mails)*100),
+    `Final N per Condition` = scales::comma(n())
+  ) |> kbl() |> kable_styling() |> row_spec(c(4), extra_css = "border-bottom: 1px solid")
+```
+
+
+# Software startup
+
+In this section, we report the results of the 2x2 between-subjects field experiment for the software startup. 
+We describe the mean and SD values per condition and the results of the pre-registered analyses and robustness checks for the cumulative time the pitch deck was opened (`duration`), the percentage of slides viewed (`completion`), and whether there was a positive reaction (`positive`). Note that we analyze positive reactions using the full sample. For completeness, however, we also report in the appendix (cf. @sec-appendix) the results for positive reactions when restricting the sample to only participants who replied (N = `r sum(d_sw$reply)`).
+
+## Descriptives
+
+@tbl-descriptives-sw shows a descriptive breakdown of cumulative opening duration, completion percentage, and positive reactions by visual fluency and substantive quality conditions.
+
+```{r}
+#| label: tbl-descriptives-sw
+#| tbl-cap: 'Descriptive statistics (software startup)'
+
+d <- d_sw
+
+d |> group_by(fluency, quality) |> summarize(N = n(), Mean = mean(duration),
+      SD = sd(duration)) -> temp_duration
+d |> group_by(fluency, quality) |> summarize(Mean = mean(completion), SD = sd(completion)) |> ungroup() |> select(Mean, SD) -> temp_completion
+d |> group_by(fluency, quality) |> summarize(Mean = mean(positive), SD = sd(positive)) |> ungroup() |> select(Mean, SD) -> temp_positive
+
+temp <- bind_cols(temp_duration, temp_completion, temp_positive)
+names(temp) <- c("Fluency", "Quality", "N", "Mean", "SD", "Mean", "SD", "Mean", "SD")
+temp |> kbl(digits = 3, format.args = list(decimal.mark = ".", big.mark = ",")) |> kable_styling() |>
+  add_header_above(c(" " = 3, "Opening Duration" = 2, "Completion Percentage" = 2, "Positive Reaction" = 2))
+```
+
+
+## Opening duration, completion percentage
+
+@tbl-results-sw shows the result of two factorial ANOVAs that model cumulative opening duration and completion percentage as a function of the visual fluency condition and the substantive quality condition. Note that type III sum of squares were used, and the proportional reduction in error is reported as effect size (η<sub>p</sub><sup>2</sup> in the table).
+
+Additionally, @tbl-robust-sw shows the results of robustness check regressions in which we included investment experience, investor type, gender, and country as control variables in addition to fluency, quality, and their interaction (significant values with p < .05 are printed in boldface). In all analyses, we used effect coding for the two factors visual fluency and substantive quality. That is, for both variables, we coded `low` as `-1` and `high` as `+1`.
+
+```{r}
+#| label: tbl-results-sw
+#| tbl-cap: 'ANOVA results for opening duration and completion (software startup)'
+
+# convert conditions into factors
+d$fluency <- as.factor(d$fluency)
+d$quality <- as.factor(d$quality)
+
+# relevel factor levels
+d$quality <- relevel(d$quality, 'high')
+d$fluency <- relevel(d$fluency, 'high')
+
+# convert factor into effect coding
+contrasts(d$fluency) <- contr.sum
+contrasts(d$quality) <- contr.sum
+
+# combine results
+temp <- bind_rows(`Opening duration` = anova_tbl(duration ~ fluency * quality, d),
+                  `Completion percentage` = anova_tbl(completion ~ fluency * quality, d),
+                  .id = "Measure")
+
+# keep only first occurrence of each measure
+temp$Measure[duplicated(temp$Measure)] <- NA
+
+temp |>
+  mutate(effect = rep(c("Fluency", "Quality", "Fluency × Quality"), 2)) |>
+  kbl(col.names = c("Measure", "Effect", "MSE", "df", "df<sub>res</sub>", "F", "p", "η<sub>p</sub><sup>2</sup>"),
+        align = "lcccccc", escape = FALSE) |>
+  kable_styling()
+```
+
+
+
+```{r}
+#| label: tbl-robust-sw
+#| tbl-cap: 'Robustness check regressions for opening duration and completion percentage with control variables (software startup)'
+
+# set reference levels
+d$location <- relevel(as.factor(d$location), "United States")
+d$gender <- relevel(as.factor(d$gender), "female")
+d$type <- relevel(as.factor(d$type), "Angel")
+
+
+# run regressions
+glm_tbl(lm(duration ~ fluency * quality + investments + type + gender + location, d)) -> temp_duration
+glm_tbl(lm(completion ~ fluency * quality + investments + type + gender + location, d), coef_digits = 3) -> temp_completion
+
+temp <- bind_cols(temp_duration, temp_completion[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "R<sup>2</sup>", "R<sup>2</sup><sub>adj.</sub>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "t", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> 
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Opening Duration" = 4, "Completion Percentage" = 4)) |>
+  row_spec(16, extra_css = "border-bottom: 1px solid")
+```
+
+
+## Positive reactions
+
+A logistic regression model was estimated to analyze the effects of visual fluency, substantive quality, and their interaction on whether there was a positive reaction to the emails. @tbl-results-positive-sw shows the result of this regression model, next to several robustness check models that included control variables and / or were specified as Tobit models.
+
+In all regressions, we used effect coding for the two factors visual fluency and substantive quality. That is, for both variables, we coded `low` as `-1` and `high` as `+1`.
+
+```{r}
+#| label: tbl-results-positive-sw
+#| tbl-cap: 'Binary logit and Tobit regressions for positive reactions (software startup)'
+#| tbl-subcap: 
+#|   - "Binary logit models"
+#|   - "Tobit models"
+#| layout-nrow: 2
+
+# run regressions
+glm_tbl(glm(positive ~ fluency * quality, family = binomial(link = "logit"), d), coef_digits = 3) -> temp_positive
+glm_tbl(glm(positive ~ fluency * quality + investments + type + gender + location, family = binomial(link = "logit"), d), coef_digits = 3) -> temp_positive_controls
+glm_tbl(AER::tobit(positive ~ fluency * quality, data = d), coef_digits = 3) -> temp_positive_tobit
+glm_tbl(AER::tobit(positive ~ fluency * quality + investments + type + gender + location, data = d), coef_digits = 3) -> temp_positive_controls_tobit
+
+
+# add empty rows to models w/o controls to enable column binding
+rows_control <- nrow(temp_positive_controls)
+rows_simple <- nrow(temp_positive)
+temp_positive[(rows_simple+1):rows_control,] <- NA
+temp_positive_tobit[(rows_simple+1):rows_control,] <- NA
+# put interaction and R2 row to the end
+temp_positive[rows_control-1,] <- temp_positive[rows_simple-1,]
+temp_positive[rows_control,] <- temp_positive[rows_simple,]
+temp_positive[rows_simple-1,] <- NA
+temp_positive[rows_simple,] <- NA
+temp_positive_tobit[rows_control-1,] <- temp_positive_tobit[rows_simple-1,]
+temp_positive_tobit[rows_control,] <- temp_positive_tobit[rows_simple,]
+temp_positive_tobit[rows_simple-1,] <- NA
+temp_positive_tobit[rows_simple,] <- NA
+
+# table binary logit
+temp <- bind_cols(temp_positive, temp_positive_controls[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "Tjur's R<sup>2</sup>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "z", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> kable_styling() |>
+  add_header_above(c(" " = 1, "Binary Logit" = 4, "Binary Logit w/ Controls" = 4)) |>
+  row_spec(c(4,16), extra_css = "border-bottom: 1px solid")
+
+# table tobit
+temp <- bind_cols(temp_positive_tobit, temp_positive_controls_tobit[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "Nagelkerke's R<sup>2</sup>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "z", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> kable_styling() |>
+  add_header_above(c(" " = 1, "Tobit Model" = 4, "Tobit w/ Controls" = 4)) |>
+  row_spec(c(4,16), extra_css = "border-bottom: 1px solid")
+```
+
+
+## Percentage increases
+
+To facilitate the interpretation of the results, we calculated the percentage increase in the dependent variables for the high level of visual fluency and substantive quality compared to the respective low level. @tbl-effect-sizes-sw shows these percentage increases for the opening duration, completion percentage, and positive reactions.
+
+
+```{r}
+#| label: tbl-effect-sizes-sw
+#| tbl-cap: 'Percentage increases for high vs. low levels of visual fluency and substantive quality (software startup)'
+
+# calculate percentage increases based on marginal means
+#
+# compute marginal means using the `marginaleffects` package
+#
+# duration
+m_dur <- aov(duration ~ fluency * quality, d)
+mm_dur_flu <- marginaleffects::predictions(m_dur, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_dur_qual <- marginaleffects::predictions(m_dur, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+# completion
+m_compl <- aov(completion ~ fluency * quality, d)
+mm_compl_flu <- marginaleffects::predictions(m_compl, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_compl_qual <- marginaleffects::predictions(m_compl, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+# positive reactions
+m_pos <- glm(positive ~ fluency * quality, family = binomial(link = "logit"), data = d)
+mm_pos_flu <- marginaleffects::predictions(m_pos, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_pos_qual <- marginaleffects::predictions(m_pos, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+
+# compute effect sizes as percentage increases for high vs. low levels
+#
+# we use the formula: 100 * (high / low - 1)
+# That is, we multiply by 100 to get the percentage increase and then
+# subtract 1 to get the percentage increase relative to the low level.
+#
+# duration: fluency
+perc_incr_dur_flu <- 100 * (mm_dur_flu$estimate[mm_dur_flu$fluency == "high"] / mm_dur_flu$estimate[mm_dur_flu$fluency == "low"] - 1)
+# duration: quality
+perc_incr_dur_qual <- 100 * (mm_dur_qual$estimate[mm_dur_qual$quality == "high"] / mm_dur_qual$estimate[mm_dur_qual$quality == "low"] - 1)
+
+# completion: fluency
+perc_incr_compl_flu <- 100 * (mm_compl_flu$estimate[mm_compl_flu$fluency == "high"] / mm_compl_flu$estimate[mm_compl_flu$fluency == "low"] - 1)
+# completion: quality
+perc_incr_compl_qual <- 100 * (mm_compl_qual$estimate[mm_compl_qual$quality == "high"] / mm_compl_qual$estimate[mm_compl_qual$quality == "low"] - 1)
+
+# positive: fluency
+perc_incr_pos_flu <- 100 * (mm_pos_flu$estimate[mm_pos_flu$fluency == "high"] / mm_pos_flu$estimate[mm_pos_flu$fluency == "low"] - 1)
+# positive: quality
+perc_incr_pos_qual <- 100 * (mm_pos_qual$estimate[mm_pos_qual$quality == "high"] / mm_pos_qual$estimate[mm_pos_qual$quality == "low"] - 1)
+
+# create table
+data.frame(
+  Measure = c("Opening duration", "Completion percentage", "Positive reaction"),
+  Fluency = c(sprintf('%.1f%%', perc_incr_dur_flu), sprintf('%.1f%%', perc_incr_compl_flu), sprintf('%.1f%%', perc_incr_pos_flu)),
+  Quality = c(sprintf('%.1f%%', perc_incr_dur_qual), sprintf('%.1f%%', perc_incr_compl_qual), sprintf('%.1f%%', perc_incr_pos_qual))
+) |> kbl() |> kable_styling()
+```
+
+
+# Healthcare startup
+
+The experimental procedure for healthcare startup was identical to the software startup. Thus, we report in this section the results of the 2x2 between-subjects field experiment for the healthcare startup.
+
+We describe the mean and SD values per condition and the results of the pre-registered analyses and robustness checks for the cumulative time the pitch deck was opened (`duration`), the percentage of slides viewed (`completion`), and whether there was a positive reaction (`positive`). Note that we again analyze positive reactions using the full sample. For completeness, however, we also report in the appendix (cf. @sec-appendix) the results for positive reactions when restricting the sample to only participants who replied (N = `r sum(d_hc$reply)`).
+
+## Descriptives
+
+@tbl-descriptives-hc shows a descriptive breakdown of cumulative opening duration, completion percentage, and positive reactions by visual fluency and substantive quality conditions.
+
+```{r}
+#| label: tbl-descriptives-hc
+#| tbl-cap: 'Descriptive statistics (healthcare startup)'
+
+d <- d_hc
+
+d |> group_by(fluency, quality) |> summarize(N = n(), Mean = mean(duration),
+      SD = sd(duration)) -> temp_duration
+d |> group_by(fluency, quality) |> summarize(Mean = mean(completion), SD = sd(completion)) |> ungroup() |> select(Mean, SD) -> temp_completion
+d |> group_by(fluency, quality) |> summarize(Mean = mean(positive), SD = sd(positive)) |> ungroup() |> select(Mean, SD) -> temp_positive
+
+temp <- bind_cols(temp_duration, temp_completion, temp_positive)
+names(temp) <- c("Fluency", "Quality", "N", "Mean", "SD", "Mean", "SD", "Mean", "SD")
+temp |> kbl(digits = 3) |> kable_styling() |>
+  add_header_above(c(" " = 3, "Opening Duration" = 2, "Completion Percentage" = 2, "Positive Reaction" = 2))
+```
+
+
+## Opening duration, completion percentage
+
+@tbl-results-hc shows the result of two factorial ANOVAs that model cumulative opening duration and completion percentage as a function of the visual fluency condition and the substantive quality condition. Note that type III sum of squares were used, and the proportional reduction in error is reported as effect size (η<sub>p</sub><sup>2</sup> in the table).
+
+Additionally, @tbl-robust-hc shows the results of robustness check regressions in which we included investment experience, investor type, gender, and country as control variables in addition to fluency, quality, and their interaction (significant values with p < .05 are printed in boldface). In all analyses, we used effect coding for the two factors visual fluency and substantive quality. That is, for both variables, we coded `low` as `-1` and `high` as `+1`.
+
+```{r}
+#| label: tbl-results-hc
+#| tbl-cap: 'ANOVA results for opening duration and completion (healthcare startup)'
+
+# convert conditions into factors
+d$fluency <- as.factor(d$fluency)
+d$quality <- as.factor(d$quality)
+
+# relevel factor levels
+d$quality <- relevel(d$quality, 'high')
+d$fluency <- relevel(d$fluency, 'high')
+
+# convert factor into effect coding
+contrasts(d$fluency) <- contr.sum
+contrasts(d$quality) <- contr.sum
+
+# combine results
+temp <- bind_rows(`Opening duration` = anova_tbl(duration ~ fluency * quality, d),
+                  `Completion percentage` = anova_tbl(completion ~ fluency * quality, d),
+                  .id = "Measure")
+
+# keep only first occurrence of each measure
+temp$Measure[duplicated(temp$Measure)] <- NA
+
+temp |>
+  mutate(effect = rep(c("Fluency", "Quality", "Fluency × Quality"), 2)) |>
+  kbl(col.names = c("Measure", "Effect", "MSE", "df", "df<sub>res</sub>", "F", "p", "η<sub>p</sub><sup>2</sup>"),
+        align = "lcccccc", escape = FALSE) |>
+  kable_styling()
+```
+
+
+
+```{r}
+#| label: tbl-robust-hc
+#| tbl-cap: 'Robustness check regressions for opening duration and completion percentage with control variables (healthcare startup)'
+
+# set reference levels
+d$location <- relevel(as.factor(d$location), "United States")
+d$gender <- relevel(as.factor(d$gender), "female")
+d$type <- relevel(as.factor(d$type), "Angel")
+
+
+# run regressions
+glm_tbl(lm(duration ~ fluency * quality + investments + type + gender + location, d)) -> temp_duration
+glm_tbl(lm(completion ~ fluency * quality + investments + type + gender + location, d), coef_digits = 3) -> temp_completion
+
+temp <- bind_cols(temp_duration, temp_completion[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "R<sup>2</sup>", "R<sup>2</sup><sub>adj.</sub>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "t", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> 
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Opening Duration" = 4, "Completion Percentage" = 4)) |>
+  row_spec(16, extra_css = "border-bottom: 1px solid")
+```
+
+
+## Positive reactions
+
+A logistic regression model was estimated to analyze the effects of visual fluency, substantive quality, and their interaction on whether there was a positive reaction to the emails. @tbl-results-positive-hc shows the result of this regression model, next to several robustness check models that included control variables and / or were specified as Tobit models.
+
+In all regressions, we used effect coding for the two factors visual fluency and substantive quality. That is, for both variables, we coded `low` as `-1` and `high` as `+1`.
+
+```{r}
+#| label: tbl-results-positive-hc
+#| tbl-cap: 'Binary logit and Tobit regressions for positive reactions (healthcare startup)'
+#| tbl-subcap: 
+#|   - "Binary logit models"
+#|   - "Tobit models"
+#| layout-nrow: 2
+
+# run regressions
+glm_tbl(glm(positive ~ fluency * quality, family = binomial(link = "logit"), d), coef_digits = 3) -> temp_positive
+glm_tbl(glm(positive ~ fluency * quality + investments + type + gender + location, family = binomial(link = "logit"), d), coef_digits = 3) -> temp_positive_controls
+glm_tbl(AER::tobit(positive ~ fluency * quality, data = d), coef_digits = 3) -> temp_positive_tobit
+glm_tbl(AER::tobit(positive ~ fluency * quality + investments + type + gender + location, data = d), coef_digits = 3) -> temp_positive_controls_tobit
+
+
+# add empty rows to models w/o controls to enable column binding
+rows_control <- nrow(temp_positive_controls)
+rows_simple <- nrow(temp_positive)
+temp_positive[(rows_simple+1):rows_control,] <- NA
+temp_positive_tobit[(rows_simple+1):rows_control,] <- NA
+# put interaction and R2 row to the end
+temp_positive[rows_control-1,] <- temp_positive[rows_simple-1,]
+temp_positive[rows_control,] <- temp_positive[rows_simple,]
+temp_positive[rows_simple-1,] <- NA
+temp_positive[rows_simple,] <- NA
+temp_positive_tobit[rows_control-1,] <- temp_positive_tobit[rows_simple-1,]
+temp_positive_tobit[rows_control,] <- temp_positive_tobit[rows_simple,]
+temp_positive_tobit[rows_simple-1,] <- NA
+temp_positive_tobit[rows_simple,] <- NA
+
+# table binary logit
+temp <- bind_cols(temp_positive, temp_positive_controls[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "Tjur's R<sup>2</sup>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "z", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> kable_styling() |>
+  add_header_above(c(" " = 1, "Binary Logit" = 4, "Binary Logit w/ Controls" = 4)) |>
+  row_spec(c(4,16), extra_css = "border-bottom: 1px solid")
+
+# table tobit
+temp <- bind_cols(temp_positive_tobit, temp_positive_controls_tobit[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "Nagelkerke's R<sup>2</sup>")) |>
+  arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality"))
+names(temp) <- c("", rep(c("Coeff.", "SE", "z", "p"), 2))
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> kable_styling() |>
+  add_header_above(c(" " = 1, "Tobit Model" = 4, "Tobit w/ Controls" = 4)) |>
+  row_spec(c(4,16), extra_css = "border-bottom: 1px solid")
+```
+
+
+## Percentage increases
+
+To facilitate the interpretation of the results, we calculated the percentage increase in the dependent variables for the high level of visual fluency and substantive quality compared to the respective low level. @tbl-effect-sizes-hc shows these percentage increases for the opening duration, completion percentage, and positive reactions.
+
+
+```{r}
+#| label: tbl-effect-sizes-hc
+#| tbl-cap: 'Percentage increases for high vs. low levels of visual fluency and substantive quality (healthcare startup)'
+
+# calculate percentage increases based on marginal means
+#
+# compute marginal means using the `marginaleffects` package
+#
+# duration
+m_dur <- aov(duration ~ fluency * quality, d)
+mm_dur_flu <- marginaleffects::predictions(m_dur, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_dur_qual <- marginaleffects::predictions(m_dur, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+# completion
+m_compl <- aov(completion ~ fluency * quality, d)
+mm_compl_flu <- marginaleffects::predictions(m_compl, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_compl_qual <- marginaleffects::predictions(m_compl, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+# positive reactions
+m_pos <- glm(positive ~ fluency * quality, family = binomial(link = "logit"), data = d)
+mm_pos_flu <- marginaleffects::predictions(m_pos, by = c("fluency"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+mm_pos_qual <- marginaleffects::predictions(m_pos, by = c("quality"),
+                   newdata = marginaleffects::datagrid(grid_type = "balanced"))
+
+# compute effect sizes as percentage increases for high vs. low levels
+#
+# we use the formula: 100 * (high / low - 1)
+# That is, we multiply by 100 to get the percentage increase and then
+# subtract 1 to get the percentage increase relative to the low level.
+#
+# duration: fluency
+perc_incr_dur_flu <- 100 * (mm_dur_flu$estimate[mm_dur_flu$fluency == "high"] / mm_dur_flu$estimate[mm_dur_flu$fluency == "low"] - 1)
+# duration: quality
+perc_incr_dur_qual <- 100 * (mm_dur_qual$estimate[mm_dur_qual$quality == "high"] / mm_dur_qual$estimate[mm_dur_qual$quality == "low"] - 1)
+
+# completion: fluency
+perc_incr_compl_flu <- 100 * (mm_compl_flu$estimate[mm_compl_flu$fluency == "high"] / mm_compl_flu$estimate[mm_compl_flu$fluency == "low"] - 1)
+# completion: quality
+perc_incr_compl_qual <- 100 * (mm_compl_qual$estimate[mm_compl_qual$quality == "high"] / mm_compl_qual$estimate[mm_compl_qual$quality == "low"] - 1)
+
+# positive: fluency
+perc_incr_pos_flu <- 100 * (mm_pos_flu$estimate[mm_pos_flu$fluency == "high"] / mm_pos_flu$estimate[mm_pos_flu$fluency == "low"] - 1)
+# positive: quality
+perc_incr_pos_qual <- 100 * (mm_pos_qual$estimate[mm_pos_qual$quality == "high"] / mm_pos_qual$estimate[mm_pos_qual$quality == "low"] - 1)
+
+# create table
+data.frame(
+  Measure = c("Opening duration", "Completion percentage", "Positive reaction"),
+  Fluency = c(sprintf('%.1f%%', perc_incr_dur_flu), sprintf('%.1f%%', perc_incr_compl_flu), sprintf('%.1f%%', perc_incr_pos_flu)),
+  Quality = c(sprintf('%.1f%%', perc_incr_dur_qual), sprintf('%.1f%%', perc_incr_compl_qual), sprintf('%.1f%%', perc_incr_pos_qual))
+) |> kbl() |> kable_styling()
+```
+
+
+# Plots {#sec-plots}
+
+## Sankey plots
+
+@fig-sankey-1 and @fig-sankey-2 show the flow of the field experiment for the software and healthcare startups, respectively, as Sankey diagram.
+
+```{r}
+#| label: fig-sankey
+#| fig-cap: Sankey diagrams of the field experiment flow
+#| fig-subcap: 
+#|   - "Software startup"
+#|   - "Healthcare startup"
+#| layout-nrow: 2
+#| fig-width: 12
+#| fig-asp: 0.75
+#| fig-dpi: 300
+#| out-width: 100%
+
+# aesthetics
+#
+# define colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+
+# define custom geom
+geom_sankey_label_richtext <- function (mapping = NULL, data = NULL, position = "identity", 
+  na.rm = FALSE, show.legend = NA, space = NULL, type = "sankey", width = 0.1,
+  inherit.aes = TRUE, family =
+    if (.Platform$OS.type == "windows") "Roboto Condensed" else "Roboto Condensed Light", ...)  # added font family
+{
+  label.aes <- list(...)
+  list(label = ggplot2::layer(stat = ggsankey:::StatSankeyText, data = data, 
+    mapping = mapping, geom = "richtext", position = position, # changed: geom = "label"
+    show.legend = show.legend, inherit.aes = inherit.aes, 
+    params = purrr::flatten(list(na.rm = na.rm, width = width, 
+      space = space, type = type, label.aes, family = family))))
+}
+
+# change ipsum theme to work for sankey plot
+theme_sankey_ipsum_rc <- function (base_family = "Roboto Condensed", base_size = 11.5, ...)
+{
+  {
+    hrbrthemes::theme_ipsum_rc(base_family = base_family, base_size = base_size, ...) %+replace% 
+      ggplot2::theme(panel.border = ggplot2::element_blank(), 
+        panel.grid.major = ggplot2::element_blank(), 
+        panel.grid.minor = ggplot2::element_blank(), 
+        axis.line = ggplot2::element_line(colour = "black", 
+          linewidth = ggplot2::rel(1)), legend.key = ggplot2::element_blank(), 
+        strip.background = ggplot2::element_rect(fill = "white", 
+          colour = "transparent", linewidth = ggplot2::rel(2)), 
+        complete = TRUE, axis.line.y = ggplot2::element_blank(), 
+        axis.line.x = ggplot2::element_blank(),
+        axis.text.x = ggplot2::element_blank(), 
+        axis.text.y = ggplot2::element_blank(), 
+        axis.ticks.y = ggplot2::element_blank(),
+        axis.ticks.x = ggplot2::element_blank(),
+        # set background to white for quarto to avoid transparency issues
+        panel.background = ggplot2::element_rect(fill='white', color='white'),
+        plot.background = ggplot2::element_rect(fill='white', color='white')
+      )
+  }
+}
+
+
+# Software startup --------------------------------------------------
+#
+# prepare sankey data (the data is already loaded at the beginning of the script)
+#
+# create binary indicators for the different stages
+sankey_soft |> mutate(
+  `Sent mails` = case_when(
+    hard_bounce == 1 ~ "Hard bounce",
+    hard_bounce == 0 ~ "Delivered"
+  ),
+  Delivered = case_when(
+    hard_bounce == 0 & is.na(date_first_click) ~ "Recipient did not open deck",
+    hard_bounce == 0 & !is.na(date_first_click) ~ "Recipient opened deck"
+  ),
+  `Recipient opened deck` = case_when(
+    hard_bounce == 0 & !is.na(date_first_click) & is.na(date_reply) ~ "Recipient did not reply",
+    hard_bounce == 0 & !is.na(date_reply) ~ "Recipient replied"
+  ),
+  `Recipient replied` = case_when(
+    positive == 0 ~ "Negative reply",
+    positive == 1 ~ "Positive reply"
+  ),
+  Category = category,
+  `Initial sample` = "Software<br>startup"
+) -> sankey_soft
+
+# make data long for sankey graph (for simplicity, just called `df`)
+sankey_soft |> make_long(`Initial sample`, `Sent mails`, Delivered,
+                         `Recipient opened deck`, `Recipient replied`,
+                         Category) -> df
+
+# add group_nodes (needed for calculation of group percentages later)
+df |> mutate(
+  group_node = case_when(
+    node == "Hard bounce" | node == "Delivered" ~ "Software<br>startup",
+    node == "Recipient did not open deck" | node == "Recipient opened deck" ~ "Delivered",
+    node == "Recipient did not reply" | node == "Recipient replied" ~ "Recipient opened deck",
+    node == "Negative reply" | node == "Positive reply" ~ "Recipient replied",
+    node == "other" | node == "geography" | node == "no investments" | node == "stage" | node == "investment strategy" | node == "industry" | node == "no specific reason" ~ "Negative reply",
+    node == "more info/clarification" | node == "meeting" | node == "formal application" | node == "updates" | node == "referral" ~ "Positive reply"
+  )  
+) -> df
+
+# add information about node N and group_node N and calculate percentages
+df |>
+  # count obs per node
+  group_by(node) |> mutate(n = n()) |>
+  ungroup() |>
+  # count obs per group_node
+  group_by(group_node) |> mutate(n_group = ifelse(is.na(group_node), NA, n())) |> 
+  ungroup() |>
+  # add percentages
+  mutate(pct = n/n_group) -> df
+
+# manually change order of nodes
+df |> mutate(
+  node = factor(node,
+                levels = c("Software<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  ),
+  next_node = factor(next_node,
+                levels = c("Software<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  )
+) -> df
+
+# make sankey plot
+#
+# first change the data so that percentages are displayed in the node texts
+df |> tidyr::drop_na(node) |>
+  mutate(
+    pct = ifelse(is.na(pct), 9999, pct), # dummy-replace NA with 9999, otherwise later ifelse does not work
+    node_text = ifelse(
+      # group_node and thus pct empty (here: 9999)
+      pct == 9999,
+      # yes, pct empty -> no percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s</span>",
+                        node, scales::comma(n)),
+      # no, pct not empty -> add percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s (%s%%)</span>",
+                        node,
+                        scales::comma(n),
+                 ifelse(pct<.01, paste0("0",weights::rd(pct*100,2)), weights::rd(pct*100,2)))
+      )) |>
+  # now create the plot
+  ggplot(aes(x = x, 
+             next_x = next_x, 
+             node = node, 
+             next_node = next_node,
+             fill = factor(node),
+             label = node_text,
+             color = factor(node)
+             )) +
+  geom_sankey(flow.alpha = 0.65, show.legend = FALSE, node.color = blue_dark, node.fill = blue_dark) +
+  geom_sankey_label_richtext(size = 3, color = "black", fill = "white") +
+  labs(x = element_blank()) +
+  # apply customized theme
+  theme_sankey_ipsum_rc(base_size = 11, plot_margin = margin(5, 5, 5, 5)) -> p
+
+# more customizing
+#
+# now: change the color of the segments
+# to this end, first decompose the plot into its parts using `ggplot_build`
+q <- ggplot_build(p)
+
+# first data layer is for line color of flows
+l1 <- q$data[[1]]$colour
+# second data layer is for line color of nodes
+l2 <- q$data[[2]]$colour
+
+# fill colors
+f1 <- q$data[[1]]$fill # flows
+f2 <- q$data[[2]]$fill # nodes
+
+# relevant flows are all of length 600, and only starting color value is relevant
+# thus, color change points (ccp) are
+ccp <- seq(1, length(f1), by = 600)
+q$data[[1]]$fill[ccp[1]] <- blue_light # hard bounce
+q$data[[1]]$fill[ccp[2]] <- blue_main # delivered
+q$data[[1]]$fill[ccp[3]] <- blue_light # deck not opened
+q$data[[1]]$fill[ccp[4]] <- blue_main # deck opened
+q$data[[1]]$fill[ccp[5]] <- blue_light # no reply
+q$data[[1]]$fill[ccp[6]] <- blue_main # reply
+q$data[[1]]$fill[ccp[7]] <- blue_light # negative reply
+q$data[[1]]$fill[ccp[8]] <- blue_main # positive reply
+q$data[[1]]$fill[ccp[9:15]] <- blue_light # negative categories
+q$data[[1]]$fill[ccp[16:20]] <- blue_main # positive categories
+
+q$data[[1]]$colour[ccp[1]] <- blue_light # hard bounce
+q$data[[1]]$colour[ccp[2]] <- blue_main # delivered
+q$data[[1]]$colour[ccp[3]] <- blue_light # deck not opened
+q$data[[1]]$colour[ccp[4]] <- blue_main # deck opened
+q$data[[1]]$colour[ccp[5]] <- blue_light # no reply
+q$data[[1]]$colour[ccp[6]] <- blue_main # reply
+q$data[[1]]$colour[ccp[7]] <- blue_light # negative reply
+q$data[[1]]$colour[ccp[8]] <- blue_main # positive reply
+q$data[[1]]$colour[ccp[9:15]] <- blue_light # negative categories
+q$data[[1]]$colour[ccp[16:20]] <- blue_main # positive categories
+
+# put all back together and plot the modified, final plot
+p_mod <- ggplot_gtable(q)
+plot(p_mod)
+
+
+# Healthcare startup ------------------------------------------------
+#
+# prepare sankey data (the data is already loaded at the beginning of the script)
+#
+# create binary indicators for the different stages
+sankey_health |> mutate(
+  `Sent mails` = case_when(
+    hard_bounce == 1 ~ "Hard bounce",
+    hard_bounce == 0 ~ "Delivered"
+  ),
+  Delivered = case_when(
+    hard_bounce == 0 & is.na(date_first_click) ~ "Recipient did not open deck",
+    hard_bounce == 0 & !is.na(date_first_click) ~ "Recipient opened deck"
+  ),
+  `Recipient opened deck` = case_when(
+    hard_bounce == 0 & !is.na(date_first_click) & is.na(date_reply) ~ "Recipient did not reply",
+    hard_bounce == 0 & !is.na(date_reply) ~ "Recipient replied"
+  ),
+  `Recipient replied` = case_when(
+    positive == 0 ~ "Negative reply",
+    positive == 1 ~ "Positive reply"
+  ),
+  Category = category,
+  `Initial sample` = "Healthcare<br>startup"
+) -> sankey_health
+
+# make data long for sankey graph (for simplicity, just called `df`)
+sankey_health |> make_long(`Initial sample`, `Sent mails`, Delivered,
+                         `Recipient opened deck`, `Recipient replied`,
+                         Category) -> df
+
+# add group_nodes (needed for calculation of group percentages later)
+df |> mutate(
+  group_node = case_when(
+    node == "Hard bounce" | node == "Delivered" ~ "Healthcare<br>startup",
+    node == "Recipient did not open deck" | node == "Recipient opened deck" ~ "Delivered",
+    node == "Recipient did not reply" | node == "Recipient replied" ~ "Recipient opened deck",
+    node == "Negative reply" | node == "Positive reply" ~ "Recipient replied",
+    node == "other" | node == "geography" | node == "no investments" | node == "stage" | node == "investment strategy" | node == "industry" | node == "no specific reason" ~ "Negative reply",
+    node == "more info/clarification" | node == "meeting" | node == "formal application" | node == "updates" | node == "referral" ~ "Positive reply"
+  )  
+) -> df
+
+# add information about node N and group_node N and calculate percentages
+df |>
+  # count obs per node
+  group_by(node) |> mutate(n = n()) |>
+  ungroup() |>
+  # count obs per group_node
+  group_by(group_node) |> mutate(n_group = ifelse(is.na(group_node), NA, n())) |> 
+  ungroup() |>
+  # add percentages
+  mutate(pct = n/n_group) -> df
+
+# manually change order of nodes
+df |> mutate(
+  node = factor(node,
+                levels = c("Healthcare<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  ),
+  next_node = factor(next_node,
+                levels = c("Healthcare<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  )
+) -> df
+
+# make sankey plot
+#
+# first change the data so that percentages are displayed in the node texts
+df |> tidyr::drop_na(node) |>
+  mutate(
+    pct = ifelse(is.na(pct), 9999, pct), # dummy-replace NA with 9999, otherwise later ifelse does not work
+    node_text = ifelse(
+      # group_node and thus pct empty (here: 9999)
+      pct == 9999,
+      # yes, pct empty -> no percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s</span>",
+                        node, scales::comma(n)),
+      # no, pct not empty -> add percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s (%s%%)</span>",
+                        node,
+                        scales::comma(n),
+                 ifelse(pct<.01, paste0("0",weights::rd(pct*100,2)), weights::rd(pct*100,2)))
+      )) |>
+  # now create the plot
+  ggplot(aes(x = x, 
+             next_x = next_x, 
+             node = node, 
+             next_node = next_node,
+             fill = factor(node),
+             label = node_text,
+             color = factor(node)
+             )) +
+  geom_sankey(flow.alpha = 0.65, show.legend = FALSE, node.color = blue_dark, node.fill = blue_dark) +
+  geom_sankey_label_richtext(size = 3, color = "black", fill = "white") +
+  labs(x = element_blank()) +
+  # apply customized theme
+  theme_sankey_ipsum_rc(base_size = 11, plot_margin = margin(5, 5, 5, 5)) -> p
+
+# more customizing
+#
+# now: change the color of the segments
+# to this end, first decompose the plot into its parts using `ggplot_build`
+q <- ggplot_build(p)
+
+# first data layer is for line color of flows
+l1 <- q$data[[1]]$colour
+# second data layer is for line color of nodes
+l2 <- q$data[[2]]$colour
+
+# fill colors
+f1 <- q$data[[1]]$fill # flows
+f2 <- q$data[[2]]$fill # nodes
+
+# relevant flows are all of length 600, and only starting color value is relevant
+# thus, color change points (ccp) are
+ccp <- seq(1, length(f1), by = 600)
+q$data[[1]]$fill[ccp[1]] <- blue_light # hard bounce
+q$data[[1]]$fill[ccp[2]] <- blue_main # delivered
+q$data[[1]]$fill[ccp[3]] <- blue_light # deck not opened
+q$data[[1]]$fill[ccp[4]] <- blue_main # deck opened
+q$data[[1]]$fill[ccp[5]] <- blue_light # no reply
+q$data[[1]]$fill[ccp[6]] <- blue_main # reply
+q$data[[1]]$fill[ccp[7]] <- blue_light # negative reply
+q$data[[1]]$fill[ccp[8]] <- blue_main # positive reply
+q$data[[1]]$fill[ccp[9:15]] <- blue_light # negative categories
+q$data[[1]]$fill[ccp[16:20]] <- blue_main # positive categories
+
+q$data[[1]]$colour[ccp[1]] <- blue_light # hard bounce
+q$data[[1]]$colour[ccp[2]] <- blue_main # delivered
+q$data[[1]]$colour[ccp[3]] <- blue_light # deck not opened
+q$data[[1]]$colour[ccp[4]] <- blue_main # deck opened
+q$data[[1]]$colour[ccp[5]] <- blue_light # no reply
+q$data[[1]]$colour[ccp[6]] <- blue_main # reply
+q$data[[1]]$colour[ccp[7]] <- blue_light # negative reply
+q$data[[1]]$colour[ccp[8]] <- blue_main # positive reply
+q$data[[1]]$colour[ccp[9:15]] <- blue_light # negative categories
+q$data[[1]]$colour[ccp[16:20]] <- blue_main # positive categories
+
+# put all back together and plot the modified, final plot
+p_mod <- ggplot_gtable(q)
+plot(p_mod)
+```
+
+## Main results
+
+@fig-main shows the main results visually. @fig-main-1 shows the results for the opening duration of the pitch decks, @fig-main-2 for the percentage of pitch decks slides that were viewed, and @fig-main-3 for the share of positive investor reactions. Note that the significance brackets represent post-hoc contrasts with Holm (1979) correction (** p < .01; *** p < .001).
+
+
+```{r}
+#| label: fig-main
+#| fig-cap: Results of the field experiment
+#| fig-subcap: 
+#|   - "Opening duration. *** p < .001."
+#|   - "Completion percentage. ** p < .01; *** p < .001."
+#|   - "Positive reactions. ** p < .01; *** p < .001."
+#| layout-nrow: 3
+#| fig-width: 12
+#| fig-asp: 0.66666667
+#| out-width: 100%
+
+# Helper functions and aesthetics
+#
+# pval function
+pval <- function(p, stars = TRUE){
+  if(stars){
+    if(p < .001) return("***")
+    if(p < .01) return("**")
+    if(p < .05) return("*")
+    if(p >= .05) return("NS")
+  } else{
+    scales::pvalue(p, prefix = c("p < ", "p = ", "p > "))
+  }
+}
+
+# theme settings
+my_style <- list(hrbrthemes::theme_ipsum_rc(),
+                 scale_fill_manual(values=c(blue_light, blue_dark)))
+my_theme <- theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = .5),
+        axis.title.y = element_text(size = 12, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 12, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        )
+# set up titles, axis names etc.
+my_labs <- labs(
+  x = "Quality", 
+  shape='Fluency'
+)
+
+
+# Main figures: software startup
+#
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_soft <- d_sw
+# convert fluency and quality to factor vars
+d_soft$fluency <- factor(d_soft$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_soft$quality <- factor(d_soft$quality, levels = c("low", "high"), labels = c("Low", "High"))
+
+# create dataset for post-hoc contrasts
+# --Note: We create a special dataset since we need to change the reference
+#         level of the factor variables before switching to effect coding to 
+#         keep the direction of the effects as intended
+d_soft_analysis <- d_soft
+d_soft_analysis$fluency <- relevel(d_soft_analysis$fluency, ref = 2)
+d_soft_analysis$quality <- relevel(d_soft_analysis$quality, ref = 2)
+# switch to effect coding
+contrasts(d_soft_analysis$fluency) <- contr.sum # High = 1, Low = -1
+contrasts(d_soft_analysis$quality) <- contr.sum
+
+# FIGURE FOR DURATION
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(duration ~ fluency * quality, d_soft_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+duration_1 <- ggplot(d_soft, aes(x=quality, y=duration, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Duration (in seconds)", title = "Software startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  coord_cartesian(ylim=c(0, 220)) +  
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = 175,
+    textsize = 6,
+    tip_length = .001,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = c(210),
+    textsize = 6,
+    tip_length = .001,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+
+# FIGURE FOR COMPLETION
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(completion ~ fluency * quality, d_soft_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+completion_1 <- ggplot(d_soft, aes(x=quality, y=completion, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Completion percentage", title = "Software startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(ylim=c(0, 1)) +  
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = .8,
+    textsize = 6,
+    tip_length = .01,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = .85,
+    textsize = 6,
+    tip_length = .01,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+
+# FIGURE FOR POSITIVE REACTIONS
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(glm(positive ~ fluency * quality,
+                           family = binomial(link = "logit"),
+                           data = d_soft_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+positive_1 <- ggplot(d_soft, aes(x=quality, y=positive, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Positive reactions", title = "Software startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(ylim=c(0, .25)) +  
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = .125,
+    tip_length = .002,
+    textsize = 6,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = .16,
+    textsize = 6,
+    tip_length = .002,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+# Main figures: healthcare startup
+#
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_health <- d_hc
+# convert fluency and quality to factor vars
+d_health$fluency <- factor(d_health$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_health$quality <- factor(d_health$quality, levels = c("low", "high"), labels = c("Low", "High"))
+
+# create dataset for post-hoc contrasts
+# --Note: We create a special dataset since we need to change the reference
+#         level of the factor variables before switching to effect coding to 
+#         keep the direction of the effects as intended
+d_health_analysis <- d_health
+d_health_analysis$fluency <- relevel(d_health_analysis$fluency, ref = 2)
+d_health_analysis$quality <- relevel(d_health_analysis$quality, ref = 2)
+# switch to effect coding
+contrasts(d_health_analysis$fluency) <- contr.sum # High = 1, Low = -1
+contrasts(d_health_analysis$quality) <- contr.sum
+
+# FIGURE FOR DURATION
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(duration ~ fluency * quality, d_health_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+duration_2 <- ggplot(d_health, aes(x=quality, y=duration, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Duration (in seconds)", title = "Healthcare startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  coord_cartesian(ylim=c(0, 220)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = 130,
+    textsize = 6,
+    tip_length = .001,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = c(155),
+    textsize = 6,
+    tip_length = .001,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+
+# FIGURE FOR COMPLETION
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(lm(completion ~ fluency * quality, d_health_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+completion_2 <- ggplot(d_health, aes(x=quality, y=completion, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Completion percentage", title = "Healthcare startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(ylim=c(0, 1)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = .8,
+    textsize = 6,
+    tip_length = .01,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = .875,
+    textsize = 6,
+    tip_length = .01,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+
+# FIGURE FOR POSITIVE REACTIONS
+#
+# post-hoc contrasts (using Holm's correction) via the `emmeans` package
+pairs(emmeans::emmeans(glm(positive ~ fluency * quality,
+                           family = binomial(link = "logit"),
+                           data = d_health_analysis),
+                       ~ quality * fluency), adjust = "holm") |>
+  broom::tidy() |> select(adj.p.value) |> pull() -> temp
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[5]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+positive_2 <- ggplot(d_health, aes(x=quality, y=positive, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args=list(mult=2), geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) + 
+  my_style + my_theme + my_labs +
+  labs(y="Positive reactions", title = "Healthcare startup", fill = "Fluency") +
+  # theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(ylim=c(0, .25)) +  
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = .1425,
+    textsize = 6,
+    tip_length = .002,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .5
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = .225,
+    textsize = 6,
+    tip_length = .002,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .5
+  )
+
+
+
+# Final (combined) figures
+#
+# duration
+duration_1 + duration_2 + plot_layout(guides = 'collect') +
+  plot_annotation(
+  title = "Opening duration of the pitch decks",
+  subtitle = "as a function of quality and fluency (Study 1)",
+  caption = "Note: Error bars indicate 95% confidence intervals around the mean. Significance brackets represent post-hoc contrasts with Holm (1979) correction.",
+) & theme(
+  plot.title = element_text(size = 18, family = "Roboto Condensed", face = "bold"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption = element_text(hjust=.5, family = "Roboto Condensed", margin = margin(t = -10, r = 0, b = 0, l = 0)),
+)
+
+# completion
+completion_1 + completion_2 + plot_layout(guides = 'collect') +
+  plot_annotation(
+  title = "Percentage of pitch deck slides being viewed",
+  subtitle = "as a function of quality and fluency (Study 1)",
+  caption = "Note: Error bars indicate 95% confidence intervals around the mean. Significance brackets represent post-hoc contrasts with Holm (1979) correction.",
+  # tag_levels = 'A'
+) & theme(
+  plot.title = element_text(size = 18, family = "Roboto Condensed", face = "bold"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption = element_text(hjust=.5, family = "Roboto Condensed", margin = margin(t = -10, r = 0, b = 0, l = 0)),
+)
+
+# positive reactions
+positive_1 + positive_2 + plot_layout(guides = 'collect') +
+  plot_annotation(
+  title = "Share of positive investor reactions",
+  subtitle = "as a function of quality and fluency (Study 1)",
+  caption = "Note: Error bars indicate 95% confidence intervals around the mean. Significance brackets represent post-hoc contrasts with Holm (1979) correction.",
+  # tag_levels = 'A'
+) & theme(
+  plot.title = element_text(size = 18, family = "Roboto Condensed", face = "bold"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption = element_text(hjust=.5, family = "Roboto Condensed", margin = margin(t = -10, r = 0, b = 0, l = 0)),
+)
+
+```
+
+
+# Appendix: Conditional positive reactions {.appendix #sec-appendix}
+
+In this section, we report the results for positive reactions when restricting the sample to only participants who replied.
+
+## Descriptives
+
+After having applied the exclusion restrictions, there were
+`r scales::comma(sum(d_sw$reply))` 
+replies to the 
+`r scales::comma(n_mails_sw)` 
+emails we sent 
+(`r sprintf('%.2f', mean(d_sw$reply)*100)`%) for the software startup. 
+Of these `r scales::comma(sum(d_sw$reply))` replies,
+`r scales::comma(sum(d_sw$positive_given_reply, na.rm=T))` replies were positive
+(`r sprintf('%.2f', mean(d_sw$positive_given_reply, na.rm=T)*100)`% of replies).
+
+For the healthcare startup, there were
+`r scales::comma(sum(d_hc$reply))` 
+replies to the 
+`r scales::comma(n_mails_hc)` 
+emails we sent 
+(`r sprintf('%.2f', mean(d_hc$reply)*100)`%). 
+Of these `r scales::comma(sum(d_hc$reply))` replies,
+`r scales::comma(sum(d_hc$positive_given_reply, na.rm=T))` replies were positive
+(`r sprintf('%.2f', mean(d_hc$positive_given_reply, na.rm=T)*100)`% of replies).
+
+@tbl-pos-reaction-overview shows a breakdown of the reply rate and the positive reactions per fluency and quality condition.
+
+```{r}
+#| label: tbl-pos-reaction-overview
+#| tbl-cap: Breakdown of positive email reactions per startup, fluency, and quality condition 
+# combine data
+pos_given_reply_data <- bind_rows(list(
+  Software = d_sw |> select(Fluency = fluency, Quality = quality, reply, positive_given_reply, investments, type, gender, location) |> mutate(n_mails = n_mails_sw),
+  Healthcare = d_hc |> select(Fluency = fluency, Quality = quality, reply, positive_given_reply, investments, type, gender, location) |> mutate(n_mails = n_mails_hc)),
+  .id = "Startup")
+# convert Startup to factor, change order of levels
+pos_given_reply_data$Startup <- factor(pos_given_reply_data$Startup, levels = c("Software", "Healthcare"))
+
+# create table
+pos_given_reply_data |> 
+  group_by(Startup, Fluency, Quality) |> 
+  summarize(
+    `Clicks` = scales::comma(n()),
+    `Replies ` = scales::comma(sum(reply)),
+    `% Reply Rate ` = sprintf('%.2f', mean(reply)*100),
+    `Pos. Reaction ` = scales::comma(sum(positive_given_reply, na.rm=T)),
+    `% Pos. Reaction Rate ` = sprintf('%.2f', mean(positive_given_reply, na.rm=T)*100),
+  ) |> kbl() |> kable_styling() |>
+  row_spec(c(4), extra_css = "border-bottom: 1px solid")
+
+```
+
+## Results
+
+We re-estimated the binary logit models (with control variables) reported in @tbl-results-positive-sw and @tbl-results-positive-hc, now predicting whether there was a positive reaction to the emails conditional on investors having replied. Thus, for this analysis, the sample is a subset of the full sample (i.e., only investors who replied to the emails, N =
+`r pos_given_reply_data |> filter(Startup == "Software", reply == 1) |> summarise(n = n()) |> pull()` software startup, N = 
+`r pos_given_reply_data |> filter(Startup == "Healthcare", reply == 1) |> summarise(n = n()) |> pull()` healthcare startup). @tbl-results-positive-given-reply shows the results of these models for the software and healthcare startup.
+
+```{r}
+#| label: tbl-results-positive-given-reply
+#| tbl-cap: 'Binary logit models of positive reactions conditional on investors having replied'
+
+d <- pos_given_reply_data
+
+# 2 tables witch 2 colmuns each version
+
+# convert conditions into factors
+d$fluency <- as.factor(d$Fluency)
+d$quality <- as.factor(d$Quality)
+
+# relevel factor levels
+d$quality <- relevel(d$quality, 'high')
+d$fluency <- relevel(d$fluency, 'high')
+
+# convert factor into effect coding
+contrasts(d$fluency) <- contr.sum
+contrasts(d$quality) <- contr.sum
+
+
+# run regressions
+glm_tbl(glm(positive_given_reply ~ fluency * quality + investments + type + gender + location, family = binomial(link = "logit"), d |> filter(Startup == "Software")), coef_digits = 3) -> temp_positive_given_reply_sw
+glm_tbl(glm(positive_given_reply ~ fluency * quality + investments + type + gender + location, family = binomial(link = "logit"), d |> filter(Startup == "Healthcare")), coef_digits = 3) -> temp_positive_given_reply_hc
+
+# put results together
+temp <- bind_cols(temp_positive_given_reply_sw,
+                  temp_positive_given_reply_hc[,-1]) |>
+  mutate(term = c("Intercept", "Fluency", "Quality", "Investment experience",
+               "Investor type [Venture Capital]", "Gender [Male]", "Country [Brazil]",
+               "Country [Canada]", "Country [China]", "Country [France]",
+               "Country [Germany]", "Country [India]", "Country [Israel]",
+               "Country [Singapore]", "Country [United Kingdom]",
+               "Fluency × Quality", "Tjur's R<sup>2</sup>"))
+
+# change order of rows: put interaction after main effects
+temp |> arrange(term %notin% c("Intercept", "Fluency", "Quality", "Fluency × Quality")) -> temp
+# change column names
+names(temp) <- c("", rep(c("Coeff.", "SE", "z", "p"), 2))
+
+# create final table
+temp |> 
+  kbl(escape = FALSE, align = "lcccccccc") |> kable_styling() |>
+  add_header_above(c(" " = 1, "Software Startup" = 4, "Healthcare Startup" = 4)) |>
+  row_spec(c(4,16), extra_css = "border-bottom: 1px solid")
+```
