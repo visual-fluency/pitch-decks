@@ -49,6 +49,12 @@ options("readr.show_col_types" = FALSE)
 
 # Data
 
+We asked all investors the following three questions regarding the importance of content quality and visual design: 
+
+- **Importance of content**: *From your experience, how important is the quality of the content for your initial decision when evaluating a startup pitch deck?*  (scale from 1 = not important to 7 = extremely important)
+- **Importance of design**: *From your experience, how important is the visual design for your initial decision when evaluating a startup pitch deck?* (scale from 1 = not important to 7 = extremely important)
+- **Relative importance**: *Which aspect is more important for your initial decision when evaluating a pitch deck?* (slider from 0–100; left anchor: visual design is more important, right anchor: quality of content is more important; default at mid-point)
+
 Note that in this report, we load the de-identified and anonmyzed dataset. Please consult the [online repository](https://researchbox.org/1836) for the code that processed the raw data.
 
 ```{r}
