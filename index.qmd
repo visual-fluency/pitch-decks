@@ -1,6 +1,6 @@
 ---
 title: "Replication Reports"
-subtitle: "From Ease to Evidence"
+subtitle: "Stage-Bounded Screening in Venture Capital"
 format:
   html:
     theme: journal
