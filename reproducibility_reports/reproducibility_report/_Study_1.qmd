@@ -1,0 +1,912 @@
+# Study 1: Investor Engagement in the Field {#sec-study-1}
+
+This section reproduces the results of Study 1 and Appendix C. The data processing, exclusions, and further analyses are documented in the [Study 1: Investor Engagement in the Field Reproducibility Report](Detailed_Report_4_Field_Experiment.qmd). The analyses use three outcomes. Opening duration is the cumulative time (in seconds) that an investor kept the deck open, summed across the investor's viewing sessions in the observation window. Slide coverage is the proportion of pitch deck slides viewed (0–1), the highest value recorded across these sessions. Positive reaction indicates whether the investor scheduled a meeting through the link in the deck or sent an email reply that clearly demonstrated investor interest (1 = yes, 0 = no).
+
+```{r}
+#| label: study-1-analyses
+
+# Study 1: Investor Engagement in the Field
+# AsPredicted Preregistration #118675
+#
+# processed data (one row per retained deck viewer, and one row per contacted
+# investor for the Sankey diagrams)
+s1_sw <- readr::read_csv(here(processed_dir, 'Study_1_Software.csv'))
+s1_hc <- readr::read_csv(here(processed_dir, 'Study_1_Healthcare.csv'))
+s1_sankey_sw <- readr::read_csv(here(processed_dir, 'Study_1_Software_Sankey.csv'))
+s1_sankey_hc <- readr::read_csv(here(processed_dir, 'Study_1_Healthcare_Sankey.csv'))
+# email exports: sent emails, hard bounces, and delivered emails
+s1_emails_sw <- readr::read_csv(here(raw_dir, 'Study_1-1_Software_Emails.csv'))
+s1_emails_hc <- readr::read_csv(here(raw_dir, 'Study_1-2_Healthcare_Emails.csv'))
+s1_n_sw <- c(sent = nrow(s1_emails_sw), bounced = sum(s1_emails_sw$hard_bounce == 1),
+             delivered = sum(s1_emails_sw$hard_bounce == 0))
+s1_n_hc <- c(sent = nrow(s1_emails_hc), bounced = sum(s1_emails_hc$hard_bounce == 1),
+             delivered = sum(s1_emails_hc$hard_bounce == 0))
+# investors with an eligible first click: first click on a session not flagged as
+# atypical, with an identifier in the outreach sample, within 21 days of receiving the email
+s1_visits_sw <- readr::read_csv(here(raw_dir, 'Study_1-1_Software_Visits.csv'))
+s1_visits_sw$date_visit <- lubridate::as_date(s1_visits_sw$date_visit, format = "%d%b%Y")
+s1_first_sw <- s1_visits_sw |>
+  filter(atypical != 1, uuid %in% s1_emails_sw$uuid) |>
+  group_by(uuid) |>
+  summarize(date_first_click = min(date_visit)) |>
+  left_join(s1_emails_sw |> select(uuid, date_sent), by = "uuid")
+s1_eligible_sw <- sum(s1_first_sw$date_first_click < lubridate::as_date(s1_first_sw$date_sent, format = "%d%b%Y") + 21)
+s1_visits_hc <- readr::read_csv(here(raw_dir, 'Study_1-2_Healthcare_Visits.csv'))
+s1_visits_hc$date_visit <- lubridate::as_date(s1_visits_hc$date_visit, format = "%d%b%Y")
+s1_first_hc <- s1_visits_hc |>
+  filter(atypical != 1, uuid %in% s1_emails_hc$uuid) |>
+  group_by(uuid) |>
+  summarize(date_first_click = min(date_visit)) |>
+  left_join(s1_emails_hc |> select(uuid, date_sent), by = "uuid")
+s1_eligible_hc <- sum(s1_first_hc$date_first_click < lubridate::as_date(s1_first_hc$date_sent, format = "%d%b%Y") + 21)
+# coded email replies: agreement between the two independent raters
+s1_coded_sw <- readr::read_csv(here(raw_dir, 'Study_1-1_Software_Replies_coded.csv'))
+s1_coded_hc <- readr::read_csv(here(raw_dir, 'Study_1-2_Healthcare_Replies_coded.csv'))
+s1_agree_sw <- irr::agree(cbind(s1_coded_sw$positive_RA1, s1_coded_sw$positive_RA2))$value
+s1_kappa_sw <- irr::kappa2(cbind(s1_coded_sw$positive_RA1, s1_coded_sw$positive_RA2))$value
+s1_agree_hc <- irr::agree(cbind(s1_coded_hc$positive_RA1, s1_coded_hc$positive_RA2))$value
+s1_kappa_hc <- irr::kappa2(cbind(s1_coded_hc$positive_RA1, s1_coded_hc$positive_RA2))$value
+
+# convert conditions into factors with effect coding (high = 1, low = -1) and
+# set the reference levels of the covariates
+s1_sw$fluency <- as.factor(s1_sw$fluency)
+s1_sw$quality <- as.factor(s1_sw$quality)
+contrasts(s1_sw$fluency) <- contr.sum
+contrasts(s1_sw$quality) <- contr.sum
+s1_sw$type <- relevel(as.factor(s1_sw$type), "Angel")
+s1_sw$gender <- relevel(as.factor(s1_sw$gender), "female")
+s1_sw$location <- relevel(as.factor(s1_sw$location), "United States")
+s1_hc$fluency <- as.factor(s1_hc$fluency)
+s1_hc$quality <- as.factor(s1_hc$quality)
+contrasts(s1_hc$fluency) <- contr.sum
+contrasts(s1_hc$quality) <- contr.sum
+s1_hc$type <- relevel(as.factor(s1_hc$type), "Angel")
+s1_hc$gender <- relevel(as.factor(s1_hc$gender), "female")
+s1_hc$location <- relevel(as.factor(s1_hc$location), "United States")
+
+# preregistered models: two-factor ANOVAs (Type III) for opening duration and
+# slide coverage, logistic regression for positive reactions
+s1_m_dur_sw <- lm(duration ~ fluency * quality, s1_sw)
+s1_m_cov_sw <- lm(completion ~ fluency * quality, s1_sw)
+s1_m_pos_sw <- glm(positive ~ fluency * quality, family = binomial(link = "logit"), s1_sw)
+s1_m_dur_hc <- lm(duration ~ fluency * quality, s1_hc)
+s1_m_cov_hc <- lm(completion ~ fluency * quality, s1_hc)
+s1_m_pos_hc <- glm(positive ~ fluency * quality, family = binomial(link = "logit"), s1_hc)
+s1_aov_dur_sw <- supernova::supernova(s1_m_dur_sw, type = 3)$tbl
+s1_aov_cov_sw <- supernova::supernova(s1_m_cov_sw, type = 3)$tbl
+s1_aov_dur_hc <- supernova::supernova(s1_m_dur_hc, type = 3)$tbl
+s1_aov_cov_hc <- supernova::supernova(s1_m_cov_hc, type = 3)$tbl
+
+# high-minus-low contrasts (two times the coefficient) and interaction
+# contrasts (four times the coefficient) in seconds and percentage points; for
+# positive reactions, differences of the model-based probabilities in
+# percentage points (interaction: fluency difference under high minus under
+# low quality, the order of the `by` groups)
+s1_effects <- bind_rows(
+  coef_contrast(s1_m_dur_sw, "fluency1", 2), coef_contrast(s1_m_dur_sw, "quality1", 2),
+  coef_contrast(s1_m_dur_sw, "fluency1:quality1", 4),
+  coef_contrast(s1_m_cov_sw, "fluency1", 2 * 100), coef_contrast(s1_m_cov_sw, "quality1", 2 * 100),
+  coef_contrast(s1_m_cov_sw, "fluency1:quality1", 4 * 100),
+  pp_contrast(s1_m_pos_sw, "fluency"), pp_contrast(s1_m_pos_sw, "quality"),
+  pp_contrast(s1_m_pos_sw, "fluency", by = "quality", hypothesis = "b1 - b2 = 0"),
+  coef_contrast(s1_m_dur_hc, "fluency1", 2), coef_contrast(s1_m_dur_hc, "quality1", 2),
+  coef_contrast(s1_m_dur_hc, "fluency1:quality1", 4),
+  coef_contrast(s1_m_cov_hc, "fluency1", 2 * 100), coef_contrast(s1_m_cov_hc, "quality1", 2 * 100),
+  coef_contrast(s1_m_cov_hc, "fluency1:quality1", 4 * 100),
+  pp_contrast(s1_m_pos_hc, "fluency"), pp_contrast(s1_m_pos_hc, "quality"),
+  pp_contrast(s1_m_pos_hc, "fluency", by = "quality", hypothesis = "b1 - b2 = 0")
+) |>
+  mutate(startup = rep(c("Software", "Healthcare"), each = 9),
+         outcome = rep(rep(c("duration", "coverage", "positive"), each = 3), 2),
+         effect = rep(c("fluency", "quality", "interaction"), 6),
+         # F tests of the preregistered ANOVAs and delta-method z tests
+         test = c(paste0("<i>F</i>(1, ", s1_aov_dur_sw$df[s1_aov_dur_sw$term == "Error"], ") = ", f2(s1_aov_dur_sw$F[2:4])),
+                  paste0("<i>F</i>(1, ", s1_aov_cov_sw$df[s1_aov_cov_sw$term == "Error"], ") = ", f2(s1_aov_cov_sw$F[2:4])),
+                  paste0("<i>z</i> = ", f2(statistic[7:9])),
+                  paste0("<i>F</i>(1, ", s1_aov_dur_hc$df[s1_aov_dur_hc$term == "Error"], ") = ", f2(s1_aov_dur_hc$F[2:4])),
+                  paste0("<i>F</i>(1, ", s1_aov_cov_hc$df[s1_aov_cov_hc$term == "Error"], ") = ", f2(s1_aov_cov_hc$F[2:4])),
+                  paste0("<i>z</i> = ", f2(statistic[16:18]))),
+         p = c(s1_aov_dur_sw$p[2:4], s1_aov_cov_sw$p[2:4], p[7:9],
+               s1_aov_dur_hc$p[2:4], s1_aov_cov_hc$p[2:4], p[16:18]))
+
+# preregistered Wald tests of the logistic regressions (log-odds scale)
+s1_logit <- bind_rows(
+  coef_contrast(s1_m_pos_sw, "fluency1", 2), coef_contrast(s1_m_pos_sw, "quality1", 2),
+  coef_contrast(s1_m_pos_sw, "fluency1:quality1", 4),
+  coef_contrast(s1_m_pos_hc, "fluency1", 2), coef_contrast(s1_m_pos_hc, "quality1", 2),
+  coef_contrast(s1_m_pos_hc, "fluency1:quality1", 4)
+)
+
+# model-based means at the two levels of each factor (equal weights over the
+# levels of the other factor, averaged on the response scale) and percentage
+# increases from the low to the high level
+s1_mm_dur_flu_sw <- marginaleffects::predictions(s1_m_dur_sw, by = "fluency", type = "response",
+                      newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_mm_dur_flu_hc <- marginaleffects::predictions(s1_m_dur_hc, by = "fluency", type = "response",
+                      newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_mm_pos_flu_sw <- marginaleffects::predictions(s1_m_pos_sw, by = "fluency", type = "response",
+                      newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_mm_pos_qual_sw <- marginaleffects::predictions(s1_m_pos_sw, by = "quality", type = "response",
+                       newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_mm_pos_flu_hc <- marginaleffects::predictions(s1_m_pos_hc, by = "fluency", type = "response",
+                      newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_mm_pos_qual_hc <- marginaleffects::predictions(s1_m_pos_hc, by = "quality", type = "response",
+                       newdata = marginaleffects::datagrid(grid_type = "balanced"))
+s1_incr_dur_flu_sw <- 100 * (s1_mm_dur_flu_sw$estimate[s1_mm_dur_flu_sw$fluency == "high"] /
+                               s1_mm_dur_flu_sw$estimate[s1_mm_dur_flu_sw$fluency == "low"] - 1)
+s1_incr_dur_flu_hc <- 100 * (s1_mm_dur_flu_hc$estimate[s1_mm_dur_flu_hc$fluency == "high"] /
+                               s1_mm_dur_flu_hc$estimate[s1_mm_dur_flu_hc$fluency == "low"] - 1)
+s1_incr_pos_flu_sw <- 100 * (s1_mm_pos_flu_sw$estimate[s1_mm_pos_flu_sw$fluency == "high"] /
+                               s1_mm_pos_flu_sw$estimate[s1_mm_pos_flu_sw$fluency == "low"] - 1)
+s1_incr_pos_qual_sw <- 100 * (s1_mm_pos_qual_sw$estimate[s1_mm_pos_qual_sw$quality == "high"] /
+                                s1_mm_pos_qual_sw$estimate[s1_mm_pos_qual_sw$quality == "low"] - 1)
+s1_incr_pos_flu_hc <- 100 * (s1_mm_pos_flu_hc$estimate[s1_mm_pos_flu_hc$fluency == "high"] /
+                               s1_mm_pos_flu_hc$estimate[s1_mm_pos_flu_hc$fluency == "low"] - 1)
+s1_incr_pos_qual_hc <- 100 * (s1_mm_pos_qual_hc$estimate[s1_mm_pos_qual_hc$quality == "high"] /
+                                s1_mm_pos_qual_hc$estimate[s1_mm_pos_qual_hc$quality == "low"] - 1)
+
+# preregistered covariate models: investment experience, investor type,
+# gender, and country added (linear, logit, and Tobit models)
+s1_mc_dur_sw <- lm(duration ~ fluency * quality + investments + type + gender + location, s1_sw)
+s1_mc_cov_sw <- lm(completion ~ fluency * quality + investments + type + gender + location, s1_sw)
+s1_mc_pos_sw <- glm(positive ~ fluency * quality + investments + type + gender + location,
+                    family = binomial(link = "logit"), s1_sw)
+s1_mc_tob_sw <- AER::tobit(positive ~ fluency * quality + investments + type + gender + location, data = s1_sw)
+s1_mc_dur_hc <- lm(duration ~ fluency * quality + investments + type + gender + location, s1_hc)
+s1_mc_cov_hc <- lm(completion ~ fluency * quality + investments + type + gender + location, s1_hc)
+s1_mc_pos_hc <- glm(positive ~ fluency * quality + investments + type + gender + location,
+                    family = binomial(link = "logit"), s1_hc)
+s1_mc_tob_hc <- AER::tobit(positive ~ fluency * quality + investments + type + gender + location, data = s1_hc)
+# p-values of the fluency, quality, and interaction terms (linear and logit models)
+s1_mc_p <- bind_rows(reg_coefs(s1_mc_dur_sw)[2:3, ], reg_coefs(s1_mc_cov_sw)[2:3, ], reg_coefs(s1_mc_pos_sw)[2:3, ],
+                     reg_coefs(s1_mc_dur_hc)[2:3, ], reg_coefs(s1_mc_cov_hc)[2:3, ], reg_coefs(s1_mc_pos_hc)[2:3, ])$p
+s1_mc_int_sw <- c(reg_coefs(s1_mc_dur_sw)$p[reg_coefs(s1_mc_dur_sw)$term == "fluency1:quality1"],
+                  reg_coefs(s1_mc_cov_sw)$p[reg_coefs(s1_mc_cov_sw)$term == "fluency1:quality1"],
+                  reg_coefs(s1_mc_pos_sw)$p[reg_coefs(s1_mc_pos_sw)$term == "fluency1:quality1"])
+s1_mc_int_hc <- c(reg_coefs(s1_mc_dur_hc)$p[reg_coefs(s1_mc_dur_hc)$term == "fluency1:quality1"],
+                  reg_coefs(s1_mc_cov_hc)$p[reg_coefs(s1_mc_cov_hc)$term == "fluency1:quality1"],
+                  reg_coefs(s1_mc_pos_hc)$p[reg_coefs(s1_mc_pos_hc)$term == "fluency1:quality1"])
+# term labels of the covariate tables
+s1_terms <- c("(Intercept)" = "Intercept", "fluency1" = "Fluency", "quality1" = "Quality",
+              "fluency1:quality1" = "Fluency × Quality", "investments" = "Investment experience",
+              "typeVenture Capital" = "Investor type [Venture capital]", "gendermale" = "Gender [Male]",
+              "locationBrazil" = "Country [Brazil]", "locationCanada" = "Country [Canada]",
+              "locationChina" = "Country [China]", "locationFrance" = "Country [France]",
+              "locationGermany" = "Country [Germany]", "locationIndia" = "Country [India]",
+              "locationIsrael" = "Country [Israel]", "locationSingapore" = "Country [Singapore]",
+              "locationUnited Kingdom" = "Country [United Kingdom]")
+
+# preregistered exploratory domain comparison: full-factorial models of
+# visual fluency x substantive quality x startup domain on the pooled samples,
+# all factors effect coded (software = 1, healthcare = -1)
+s1_both <- bind_rows(Software = select(s1_sw, duration, completion, positive, fluency, quality),
+                     Healthcare = select(s1_hc, duration, completion, positive, fluency, quality),
+                     .id = "startup")
+s1_both$startup <- factor(s1_both$startup, levels = c("Software", "Healthcare"))
+s1_both$fluency <- as.factor(s1_both$fluency)
+s1_both$quality <- as.factor(s1_both$quality)
+contrasts(s1_both$startup) <- contr.sum
+contrasts(s1_both$fluency) <- contr.sum
+contrasts(s1_both$quality) <- contr.sum
+s1_m_dom_dur <- lm(duration ~ fluency * quality * startup, s1_both)
+s1_m_dom_cov <- lm(completion ~ fluency * quality * startup, s1_both)
+s1_m_dom_pos <- glm(positive ~ fluency * quality * startup, family = binomial(link = "logit"), s1_both)
+# software minus healthcare: four times the two-way domain coefficients
+# (fluency and quality contrasts) and eight times the three-way coefficient
+# (interaction contrasts); for positive reactions, the same differences of the
+# percentage-point contrasts (`by` groups: software, healthcare; for the
+# interaction high quality software, high healthcare, low software, low
+# healthcare)
+s1_domain <- bind_rows(
+  coef_contrast(s1_m_dom_dur, "fluency1:startup1", 4), coef_contrast(s1_m_dom_dur, "quality1:startup1", 4),
+  coef_contrast(s1_m_dom_dur, "fluency1:quality1:startup1", 8),
+  coef_contrast(s1_m_dom_cov, "fluency1:startup1", 4 * 100), coef_contrast(s1_m_dom_cov, "quality1:startup1", 4 * 100),
+  coef_contrast(s1_m_dom_cov, "fluency1:quality1:startup1", 8 * 100),
+  pp_contrast(s1_m_dom_pos, "fluency", by = "startup", hypothesis = "b1 - b2 = 0"),
+  pp_contrast(s1_m_dom_pos, "quality", by = "startup", hypothesis = "b1 - b2 = 0"),
+  pp_contrast(s1_m_dom_pos, "fluency", by = c("quality", "startup"), hypothesis = "(b1 - b3) - (b2 - b4) = 0")
+)
+```
+
+
+## Sample {#sec-study-1-sample}
+
+The pitch emails were sent to `r scales::comma(s1_n_sw["sent"])` software investors and `r scales::comma(s1_n_hc["sent"])` healthcare investors. Of these, `r scales::comma(s1_n_sw["bounced"])` and `r scales::comma(s1_n_hc["bounced"])` emails were returned as hard bounces (for example, because an address was no longer valid), so that `r scales::comma(s1_n_sw["delivered"])` and `r scales::comma(s1_n_hc["delivered"])` emails were delivered, reaching `r scales::comma(s1_n_sw["delivered"] + s1_n_hc["delivered"])` investors. Investors entered the sample if they clicked the link to the deck within 21 days of receiving the email, and only their activity within 21 days after the first click was analyzed. Viewing sessions flagged by DocSend as an "Atypical Source Visit", sessions without an identifier, and sessions with an identifier outside the outreach sample were removed. `r scales::comma(s1_eligible_sw)` software investors and `r scales::comma(s1_eligible_hc)` healthcare investors had an eligible first click, corresponding to `r sprintf('%.1f', 100 * s1_eligible_sw / s1_n_sw["delivered"])`% and `r sprintf('%.1f', 100 * s1_eligible_hc / s1_n_hc["delivered"])`% of the delivered emails. Investors whose cumulative opening duration was below 3 seconds or above 30 minutes were then excluded. The analysis samples comprise the remaining `r scales::comma(nrow(s1_sw))` software and `r scales::comma(nrow(s1_hc))` healthcare investors (the retained deck viewers), `r sprintf('%.1f', 100 * nrow(s1_sw) / s1_n_sw["delivered"])`% and `r sprintf('%.1f', 100 * nrow(s1_hc) / s1_n_hc["delivered"])`% of the delivered emails. [Table C1, Panel A](#s1-table-C1a) gives the delivered emails and the retained deck viewers per condition, and [Panel B](#s1-table-C1b) describes the retained deck viewers. [Figures C1](#s1-figure-C1) and [C2](#s1-figure-C2) show the flow from the sent emails to the replies as Sankey diagrams.
+
+Two independent raters, blind to the hypotheses, classified all `r scales::comma(nrow(s1_coded_sw))` software and `r nrow(s1_coded_hc)` healthcare email replies as to whether they demonstrated investor interest. Their agreement was `r sprintf('%.2f', s1_agree_sw)`% for the software startup (Cohen's κ = `r weights::rd(s1_kappa_sw, 3)`) and `r sprintf('%.2f', s1_agree_hc)`% for the healthcare startup (κ = `r weights::rd(s1_kappa_hc, 3)`). The authors resolved the cases in which the raters disagreed. Only replies within 21 days after the first click count as positive reactions, and investors without such a reply are coded 0.
+
+::: {#s1-table-C1a}
+```{r}
+#| label: study-1-table-C1a
+
+# delivered emails per condition (email exports; the treatment is coded as
+# "fluency/quality")
+s1_delivered <- bind_rows(Software = s1_emails_sw, Healthcare = s1_emails_hc, .id = "startup") |>
+  filter(hard_bounce == 0) |>
+  mutate(fluency = stringr::str_split(treatment, "/", simplify = TRUE)[, 1],
+         quality = stringr::str_split(treatment, "/", simplify = TRUE)[, 2]) |>
+  count(startup, fluency, quality, name = "delivered")
+# retained deck viewers per condition
+s1_viewers <- bind_rows(Software = s1_sw, Healthcare = s1_hc, .id = "startup") |>
+  mutate(fluency = as.character(fluency), quality = as.character(quality)) |>
+  count(startup, fluency, quality, name = "viewers")
+
+left_join(s1_viewers, s1_delivered, by = c("startup", "fluency", "quality")) |>
+  mutate(startup = factor(startup, levels = c("Software", "Healthcare"))) |>
+  arrange(startup, fluency, quality) |>
+  mutate(Fluency = ifelse(fluency == "high", "High", "Low"), Quality = ifelse(quality == "high", "High", "Low"),
+         Delivered = scales::comma(delivered), Viewers = scales::comma(viewers),
+         Rate = sprintf('%.2f', 100 * viewers / delivered)) |>
+  select(startup, Fluency, Quality, Delivered, Viewers, Rate) |>
+  kbl(col.names = c("Startup", "Fluency", "Quality", "Delivered emails", "Retained deck viewers", "Click rate (%)"),
+      caption = "Table C1, Panel A: Condition counts, Study 1", align = "lllccc") |>
+  kable_styling() |>
+  row_spec(4, extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top")
+```
+:::
+
+::: {#s1-table-C1b}
+```{r}
+#| label: study-1-table-C1b
+
+data.frame(
+  Characteristic = c("Delivered emails", "Click rate (retained deck viewers)", "Replies", "Positive reactions",
+                     "Investment experience (number of investments)",
+                     "Investor type", "Business angel", "Venture capitalist",
+                     "Gender", "Female", "Male",
+                     "Country", "United States", "Other countries"),
+  Software = c(scales::comma(s1_n_sw["delivered"]), paste0(sprintf('%.1f', 100 * nrow(s1_sw) / s1_n_sw["delivered"]), "%"),
+               n_pct(sum(s1_sw$reply), nrow(s1_sw)), n_pct(sum(s1_sw$positive), nrow(s1_sw)),
+               mean_sd(s1_sw$investments),
+               "", n_pct(sum(s1_sw$type == "Angel"), nrow(s1_sw)), n_pct(sum(s1_sw$type == "Venture Capital"), nrow(s1_sw)),
+               "", n_pct(sum(s1_sw$gender == "female"), nrow(s1_sw)), n_pct(sum(s1_sw$gender == "male"), nrow(s1_sw)),
+               "", n_pct(sum(s1_sw$location == "United States"), nrow(s1_sw)),
+               n_pct(sum(s1_sw$location != "United States"), nrow(s1_sw))),
+  Healthcare = c(scales::comma(s1_n_hc["delivered"]), paste0(sprintf('%.1f', 100 * nrow(s1_hc) / s1_n_hc["delivered"]), "%"),
+                 n_pct(sum(s1_hc$reply), nrow(s1_hc)), n_pct(sum(s1_hc$positive), nrow(s1_hc)),
+                 mean_sd(s1_hc$investments),
+                 "", n_pct(sum(s1_hc$type == "Angel"), nrow(s1_hc)), n_pct(sum(s1_hc$type == "Venture Capital"), nrow(s1_hc)),
+                 "", n_pct(sum(s1_hc$gender == "female"), nrow(s1_hc)), n_pct(sum(s1_hc$gender == "male"), nrow(s1_hc)),
+                 "", n_pct(sum(s1_hc$location == "United States"), nrow(s1_hc)),
+                 n_pct(sum(s1_hc$location != "United States"), nrow(s1_hc)))
+) |>
+  kbl(col.names = c("Characteristic", paste0("Software (<i>N</i> = ", scales::comma(nrow(s1_sw)), ")"),
+                    paste0("Healthcare (<i>N</i> = ", scales::comma(nrow(s1_hc)), ")")),
+      caption = "Table C1, Panel B: Investor characteristics, Study 1", align = "lrr", escape = FALSE) |>
+  kable_styling() |>
+  row_spec(c(6, 9, 12), bold = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Panel A: The click rate is the number of retained deck viewers as a percentage of the delivered emails (after exclusions). Panel B describes the retained deck viewers. Replies and positive reactions count the replies within 21 days after the first click. Investment experience is the number of previous startup investments.
+:::
+
+::: {#s1-figure-C1}
+```{r}
+#| fig-cap: "Figure C1: Sankey diagram of the field experiment flow for the software startup"
+#| fig-width: 12
+#| fig-asp: 0.75
+#| fig-dpi: 300
+#| out-width: 100%
+
+# define custom geom
+s1_geom_sankey_label_richtext <- function (mapping = NULL, data = NULL, position = "identity",
+  na.rm = FALSE, show.legend = NA, space = NULL, type = "sankey", width = 0.1,
+  inherit.aes = TRUE, family =
+    if (.Platform$OS.type == "windows") "Roboto Condensed" else "Roboto Condensed Light", ...)  # added font family
+{
+  label.aes <- list(...)
+  list(label = ggplot2::layer(stat = ggsankey:::StatSankeyText, data = data,
+    mapping = mapping, geom = "richtext", position = position, # changed: geom = "label"
+    show.legend = show.legend, inherit.aes = inherit.aes,
+    params = purrr::flatten(list(na.rm = na.rm, width = width,
+      space = space, type = type, label.aes, family = family))))
+}
+
+# change ipsum theme to work for sankey plot
+s1_theme_sankey_ipsum_rc <- function (base_family = "Roboto Condensed", base_size = 11.5, ...)
+{
+  {
+    hrbrthemes::theme_ipsum_rc(base_family = base_family, base_size = base_size, ...) %+replace%
+      ggplot2::theme(panel.border = ggplot2::element_blank(),
+        panel.grid.major = ggplot2::element_blank(),
+        panel.grid.minor = ggplot2::element_blank(),
+        axis.line = ggplot2::element_line(colour = "black",
+          linewidth = ggplot2::rel(1)), legend.key = ggplot2::element_blank(),
+        strip.background = ggplot2::element_rect(fill = "white",
+          colour = "transparent", linewidth = ggplot2::rel(2)),
+        complete = TRUE, axis.line.y = ggplot2::element_blank(),
+        axis.line.x = ggplot2::element_blank(),
+        axis.text.x = ggplot2::element_blank(),
+        axis.text.y = ggplot2::element_blank(),
+        axis.ticks.y = ggplot2::element_blank(),
+        axis.ticks.x = ggplot2::element_blank(),
+        # set background to white for quarto to avoid transparency issues
+        panel.background = ggplot2::element_rect(fill='white', color='white'),
+        plot.background = ggplot2::element_rect(fill='white', color='white')
+      )
+  }
+}
+
+
+# Software startup --------------------------------------------------
+#
+# create binary indicators for the different stages
+s1_sankey_sw |> mutate(
+  `Sent mails` = case_when(
+    hard_bounce == 1 ~ "Hard bounce",
+    hard_bounce == 0 ~ "Delivered"
+  ),
+  Delivered = case_when(
+    hard_bounce == 0 & is.na(date_first_click) ~ "Recipient did not open deck",
+    hard_bounce == 0 & !is.na(date_first_click) ~ "Recipient opened deck"
+  ),
+  `Recipient opened deck` = case_when(
+    hard_bounce == 0 & !is.na(date_first_click) & is.na(date_reply) ~ "Recipient did not reply",
+    hard_bounce == 0 & !is.na(date_reply) ~ "Recipient replied"
+  ),
+  `Recipient replied` = case_when(
+    positive == 0 ~ "Negative reply",
+    positive == 1 ~ "Positive reply"
+  ),
+  Category = category,
+  `Initial sample` = "Software<br>startup"
+) -> s1_sankey_sw
+
+# make data long for sankey graph
+s1_sankey_sw |> ggsankey::make_long(`Initial sample`, `Sent mails`, Delivered,
+                                    `Recipient opened deck`, `Recipient replied`,
+                                    Category) -> s1_df
+
+# add group_nodes (needed for calculation of group percentages later)
+s1_df |> mutate(
+  group_node = case_when(
+    node == "Hard bounce" | node == "Delivered" ~ "Software<br>startup",
+    node == "Recipient did not open deck" | node == "Recipient opened deck" ~ "Delivered",
+    node == "Recipient did not reply" | node == "Recipient replied" ~ "Recipient opened deck",
+    node == "Negative reply" | node == "Positive reply" ~ "Recipient replied",
+    node == "other" | node == "geography" | node == "no investments" | node == "stage" | node == "investment strategy" | node == "industry" | node == "no specific reason" ~ "Negative reply",
+    node == "more info/clarification" | node == "meeting" | node == "formal application" | node == "updates" | node == "referral" ~ "Positive reply"
+  )
+) -> s1_df
+
+# add information about node N and group_node N and calculate percentages
+s1_df |>
+  # count obs per node
+  group_by(node) |> mutate(n = n()) |>
+  ungroup() |>
+  # count obs per group_node
+  group_by(group_node) |> mutate(n_group = ifelse(is.na(group_node), NA, n())) |>
+  ungroup() |>
+  # add percentages
+  mutate(pct = n/n_group) -> s1_df
+
+# manually change order of nodes
+s1_df |> mutate(
+  node = factor(node,
+                levels = c("Software<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  ),
+  next_node = factor(next_node,
+                levels = c("Software<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  )
+) -> s1_df
+
+# make sankey plot
+#
+# first change the data so that percentages are displayed in the node texts
+s1_df |> tidyr::drop_na(node) |>
+  mutate(
+    pct = ifelse(is.na(pct), 9999, pct), # dummy-replace NA with 9999, otherwise later ifelse does not work
+    node_text = ifelse(
+      # group_node and thus pct empty (here: 9999)
+      pct == 9999,
+      # yes, pct empty -> no percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s</span>",
+                        node, scales::comma(n)),
+      # no, pct not empty -> add percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s (%s%%)</span>",
+                        node,
+                        scales::comma(n),
+                 ifelse(pct<.01, paste0("0",weights::rd(pct*100,2)), weights::rd(pct*100,2)))
+      )) |>
+  # now create the plot
+  ggplot(aes(x = x,
+             next_x = next_x,
+             node = node,
+             next_node = next_node,
+             fill = factor(node),
+             label = node_text,
+             color = factor(node)
+             )) +
+  ggsankey::geom_sankey(flow.alpha = 0.65, show.legend = FALSE, node.color = blue_dark, node.fill = blue_dark) +
+  s1_geom_sankey_label_richtext(size = 3, color = "black", fill = "white") +
+  labs(x = element_blank()) +
+  # apply customized theme
+  s1_theme_sankey_ipsum_rc(base_size = 11, plot_margin = margin(5, 5, 5, 5)) -> s1_p
+
+# more customizing
+#
+# now: change the color of the segments
+# to this end, first decompose the plot into its parts using `ggplot_build`
+s1_q <- ggplot_build(s1_p)
+
+# first data layer is for line color of flows
+s1_l1 <- s1_q$data[[1]]$colour
+# second data layer is for line color of nodes
+s1_l2 <- s1_q$data[[2]]$colour
+
+# fill colors
+s1_f1 <- s1_q$data[[1]]$fill # flows
+s1_f2 <- s1_q$data[[2]]$fill # nodes
+
+# relevant flows are all of length 600, and only starting color value is relevant
+# thus, color change points (ccp) are
+s1_ccp <- seq(1, length(s1_f1), by = 600)
+s1_q$data[[1]]$fill[s1_ccp[1]] <- blue_light # hard bounce
+s1_q$data[[1]]$fill[s1_ccp[2]] <- blue_main # delivered
+s1_q$data[[1]]$fill[s1_ccp[3]] <- blue_light # deck not opened
+s1_q$data[[1]]$fill[s1_ccp[4]] <- blue_main # deck opened
+s1_q$data[[1]]$fill[s1_ccp[5]] <- blue_light # no reply
+s1_q$data[[1]]$fill[s1_ccp[6]] <- blue_main # reply
+s1_q$data[[1]]$fill[s1_ccp[7]] <- blue_light # negative reply
+s1_q$data[[1]]$fill[s1_ccp[8]] <- blue_main # positive reply
+s1_q$data[[1]]$fill[s1_ccp[9:15]] <- blue_light # negative categories
+s1_q$data[[1]]$fill[s1_ccp[16:20]] <- blue_main # positive categories
+
+s1_q$data[[1]]$colour[s1_ccp[1]] <- blue_light # hard bounce
+s1_q$data[[1]]$colour[s1_ccp[2]] <- blue_main # delivered
+s1_q$data[[1]]$colour[s1_ccp[3]] <- blue_light # deck not opened
+s1_q$data[[1]]$colour[s1_ccp[4]] <- blue_main # deck opened
+s1_q$data[[1]]$colour[s1_ccp[5]] <- blue_light # no reply
+s1_q$data[[1]]$colour[s1_ccp[6]] <- blue_main # reply
+s1_q$data[[1]]$colour[s1_ccp[7]] <- blue_light # negative reply
+s1_q$data[[1]]$colour[s1_ccp[8]] <- blue_main # positive reply
+s1_q$data[[1]]$colour[s1_ccp[9:15]] <- blue_light # negative categories
+s1_q$data[[1]]$colour[s1_ccp[16:20]] <- blue_main # positive categories
+
+# put all back together and plot the modified, final plot
+s1_p_mod <- ggplot_gtable(s1_q)
+plot(s1_p_mod)
+```
+:::
+
+::: {#s1-figure-C2}
+```{r}
+#| fig-cap: "Figure C2: Sankey diagram of the field experiment flow for the healthcare startup"
+#| fig-width: 12
+#| fig-asp: 0.75
+#| fig-dpi: 300
+#| out-width: 100%
+
+# Healthcare startup ------------------------------------------------
+#
+# create binary indicators for the different stages
+s1_sankey_hc |> mutate(
+  `Sent mails` = case_when(
+    hard_bounce == 1 ~ "Hard bounce",
+    hard_bounce == 0 ~ "Delivered"
+  ),
+  Delivered = case_when(
+    hard_bounce == 0 & is.na(date_first_click) ~ "Recipient did not open deck",
+    hard_bounce == 0 & !is.na(date_first_click) ~ "Recipient opened deck"
+  ),
+  `Recipient opened deck` = case_when(
+    hard_bounce == 0 & !is.na(date_first_click) & is.na(date_reply) ~ "Recipient did not reply",
+    hard_bounce == 0 & !is.na(date_reply) ~ "Recipient replied"
+  ),
+  `Recipient replied` = case_when(
+    positive == 0 ~ "Negative reply",
+    positive == 1 ~ "Positive reply"
+  ),
+  Category = category,
+  `Initial sample` = "Healthcare<br>startup"
+) -> s1_sankey_hc
+
+# make data long for sankey graph
+s1_sankey_hc |> ggsankey::make_long(`Initial sample`, `Sent mails`, Delivered,
+                                    `Recipient opened deck`, `Recipient replied`,
+                                    Category) -> s1_df
+
+# add group_nodes (needed for calculation of group percentages later)
+s1_df |> mutate(
+  group_node = case_when(
+    node == "Hard bounce" | node == "Delivered" ~ "Healthcare<br>startup",
+    node == "Recipient did not open deck" | node == "Recipient opened deck" ~ "Delivered",
+    node == "Recipient did not reply" | node == "Recipient replied" ~ "Recipient opened deck",
+    node == "Negative reply" | node == "Positive reply" ~ "Recipient replied",
+    node == "other" | node == "geography" | node == "no investments" | node == "stage" | node == "investment strategy" | node == "industry" | node == "no specific reason" ~ "Negative reply",
+    node == "more info/clarification" | node == "meeting" | node == "formal application" | node == "updates" | node == "referral" ~ "Positive reply"
+  )
+) -> s1_df
+
+# add information about node N and group_node N and calculate percentages
+s1_df |>
+  # count obs per node
+  group_by(node) |> mutate(n = n()) |>
+  ungroup() |>
+  # count obs per group_node
+  group_by(group_node) |> mutate(n_group = ifelse(is.na(group_node), NA, n())) |>
+  ungroup() |>
+  # add percentages
+  mutate(pct = n/n_group) -> s1_df
+
+# manually change order of nodes
+s1_df |> mutate(
+  node = factor(node,
+                levels = c("Healthcare<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  ),
+  next_node = factor(next_node,
+                levels = c("Healthcare<br>startup",
+                           "Hard bounce", "Delivered",
+                           "Recipient did not open deck", "Recipient opened deck",
+                           "Recipient did not reply", "Recipient replied",
+                           "Negative reply", "Positive reply",
+                           "other", "geography", "no investments", "stage", "investment strategy", "industry", "no specific reason",
+                           "more info/clarification", "meeting", "formal application", "updates", "referral"
+                )
+  )
+) -> s1_df
+
+# make sankey plot
+#
+# first change the data so that percentages are displayed in the node texts
+s1_df |> tidyr::drop_na(node) |>
+  mutate(
+    pct = ifelse(is.na(pct), 9999, pct), # dummy-replace NA with 9999, otherwise later ifelse does not work
+    node_text = ifelse(
+      # group_node and thus pct empty (here: 9999)
+      pct == 9999,
+      # yes, pct empty -> no percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s</span>",
+                        node, scales::comma(n)),
+      # no, pct not empty -> add percentages
+      sprintf("<span style='font-weight:bold; font-family:Roboto Condensed'>%s</span><br><span style='color:gray25'>N = %s (%s%%)</span>",
+                        node,
+                        scales::comma(n),
+                 ifelse(pct<.01, paste0("0",weights::rd(pct*100,2)), weights::rd(pct*100,2)))
+      )) |>
+  # now create the plot
+  ggplot(aes(x = x,
+             next_x = next_x,
+             node = node,
+             next_node = next_node,
+             fill = factor(node),
+             label = node_text,
+             color = factor(node)
+             )) +
+  ggsankey::geom_sankey(flow.alpha = 0.65, show.legend = FALSE, node.color = blue_dark, node.fill = blue_dark) +
+  s1_geom_sankey_label_richtext(size = 3, color = "black", fill = "white") +
+  labs(x = element_blank()) +
+  # apply customized theme
+  s1_theme_sankey_ipsum_rc(base_size = 11, plot_margin = margin(5, 5, 5, 5)) -> s1_p
+
+# more customizing
+#
+# now: change the color of the segments
+# to this end, first decompose the plot into its parts using `ggplot_build`
+s1_q <- ggplot_build(s1_p)
+
+# first data layer is for line color of flows
+s1_l1 <- s1_q$data[[1]]$colour
+# second data layer is for line color of nodes
+s1_l2 <- s1_q$data[[2]]$colour
+
+# fill colors
+s1_f1 <- s1_q$data[[1]]$fill # flows
+s1_f2 <- s1_q$data[[2]]$fill # nodes
+
+# relevant flows are all of length 600, and only starting color value is relevant
+# thus, color change points (ccp) are
+s1_ccp <- seq(1, length(s1_f1), by = 600)
+s1_q$data[[1]]$fill[s1_ccp[1]] <- blue_light # hard bounce
+s1_q$data[[1]]$fill[s1_ccp[2]] <- blue_main # delivered
+s1_q$data[[1]]$fill[s1_ccp[3]] <- blue_light # deck not opened
+s1_q$data[[1]]$fill[s1_ccp[4]] <- blue_main # deck opened
+s1_q$data[[1]]$fill[s1_ccp[5]] <- blue_light # no reply
+s1_q$data[[1]]$fill[s1_ccp[6]] <- blue_main # reply
+s1_q$data[[1]]$fill[s1_ccp[7]] <- blue_light # negative reply
+s1_q$data[[1]]$fill[s1_ccp[8]] <- blue_main # positive reply
+s1_q$data[[1]]$fill[s1_ccp[9:15]] <- blue_light # negative categories
+s1_q$data[[1]]$fill[s1_ccp[16:20]] <- blue_main # positive categories
+
+s1_q$data[[1]]$colour[s1_ccp[1]] <- blue_light # hard bounce
+s1_q$data[[1]]$colour[s1_ccp[2]] <- blue_main # delivered
+s1_q$data[[1]]$colour[s1_ccp[3]] <- blue_light # deck not opened
+s1_q$data[[1]]$colour[s1_ccp[4]] <- blue_main # deck opened
+s1_q$data[[1]]$colour[s1_ccp[5]] <- blue_light # no reply
+s1_q$data[[1]]$colour[s1_ccp[6]] <- blue_main # reply
+s1_q$data[[1]]$colour[s1_ccp[7]] <- blue_light # negative reply
+s1_q$data[[1]]$colour[s1_ccp[8]] <- blue_main # positive reply
+s1_q$data[[1]]$colour[s1_ccp[9:15]] <- blue_light # negative categories
+s1_q$data[[1]]$colour[s1_ccp[16:20]] <- blue_main # positive categories
+
+# put all back together and plot the modified, final plot
+s1_p_mod <- ggplot_gtable(s1_q)
+plot(s1_p_mod)
+```
+:::
+
+
+## Preregistered analyses {#sec-study-1-preregistered}
+
+As preregistered, the two startups were analyzed separately, based on the retained deck viewers. Two-factor ANOVAs (Type III sums of squares) related opening duration and slide coverage to visual fluency, substantive quality, and their interaction, and a logistic regression related positive reactions to the same predictors. Both factors were effect coded (low = −1, high = +1). With this coding, the difference between the high and the low level of a factor, averaged over the two levels of the other factor, is two times its coefficient. The interaction contrast, the fluency effect under high quality minus the fluency effect under low quality, is four times the interaction coefficient. We report these contrasts in seconds for opening duration and in percentage points for slide coverage. For positive reactions, the contrasts are the differences between the model-based probabilities of a positive reaction (predicted probabilities with equal weights over the levels of the other factor), in percentage points, with delta-method confidence intervals and z tests. The preregistered Wald tests of the logistic regression refer to the log-odds scale. They agree with the percentage-point tests on the main effects and differ on the interaction, so we report both for the interaction. The preregistration predicted that both factors would increase all three outcomes (for visual fluency, Hypothesis 1) and specified the fluency × quality interaction without a directional prediction. All tests are two-sided (α = .05). To describe the size of the effects, we also computed model-based means at the two levels of each factor, with equal weights over the levels of the other factor and averaged on the response scale (for positive reactions, predicted probabilities), and the percentage increase from the low to the high level. [Table 2, Panel A](#s1-table-2a) reports the descriptive statistics per condition, [Panel B](#s1-table-2b) the contrasts and their tests, and [Figure 1](#s1-figure-1) shows the fluency and quality effects.
+
+*Results.* Both visual fluency and substantive quality increased the time investors kept the decks open. High-fluency decks stayed open `r f2(s1_effects$estimate[1])` seconds longer than low-fluency decks for the software startup (95% CI `r ci_txt(s1_effects$lower[1], s1_effects$upper[1])`) and `r f2(s1_effects$estimate[10])` seconds longer for the healthcare startup (95% CI `r ci_txt(s1_effects$lower[10], s1_effects$upper[10])`, both `r p_txt(max(s1_effects$p[c(1, 10)]))`), increases of `r sprintf('%.1f', s1_incr_dur_flu_sw)`% and `r sprintf('%.1f', s1_incr_dur_flu_hc)`% over the model-based means of the low-fluency decks. Higher substantive quality increased opening duration by `r f2(s1_effects$estimate[2])` and `r f2(s1_effects$estimate[11])` seconds (both `r p_txt(max(s1_effects$p[c(2, 11)]))`). Visual fluency also increased slide coverage, by `r f2(s1_effects$estimate[4])` percentage points for the software startup (95% CI `r ci_txt(s1_effects$lower[4], s1_effects$upper[4])`) and by `r f2(s1_effects$estimate[13])` percentage points for the healthcare startup (95% CI `r ci_txt(s1_effects$lower[13], s1_effects$upper[13])`, both `r p_txt(max(s1_effects$p[c(4, 13)]))`). Higher substantive quality increased slide coverage by `r f2(s1_effects$estimate[5])` and `r f2(s1_effects$estimate[14])` percentage points (both `r p_txt(max(s1_effects$p[c(5, 14)]))`). Visual fluency also increased positive reactions. The model-based probability of a positive reaction rose from `r f2(100 * s1_mm_pos_flu_sw$estimate[s1_mm_pos_flu_sw$fluency == "low"])`% for the low-fluency software decks to `r f2(100 * s1_mm_pos_flu_sw$estimate[s1_mm_pos_flu_sw$fluency == "high"])`% for the high-fluency versions, and from `r f2(100 * s1_mm_pos_flu_hc$estimate[s1_mm_pos_flu_hc$fluency == "low"])`% to `r f2(100 * s1_mm_pos_flu_hc$estimate[s1_mm_pos_flu_hc$fluency == "high"])`% for the healthcare startup, increases of `r f2(s1_effects$estimate[7])` percentage points (95% CI `r ci_txt(s1_effects$lower[7], s1_effects$upper[7])`) and `r f2(s1_effects$estimate[16])` percentage points (95% CI `r ci_txt(s1_effects$lower[16], s1_effects$upper[16])`, both `r p_txt(max(s1_effects$p[c(7, 16)], s1_logit$p[c(1, 4)]))`) or relative increases of `r sprintf('%.1f', s1_incr_pos_flu_sw)`% and `r sprintf('%.1f', s1_incr_pos_flu_hc)`%. Higher substantive quality increased the probability of a positive reaction by `r f2(s1_effects$estimate[8])` and `r f2(s1_effects$estimate[17])` percentage points, or by `r sprintf('%.1f', s1_incr_pos_qual_sw)`% and `r sprintf('%.1f', s1_incr_pos_qual_hc)`% (both `r p_txt(max(s1_effects$p[c(8, 17)], s1_logit$p[c(2, 5)]))`). The fluency results support Hypothesis 1. For the software startup, the fluency × quality interactions showed a stronger fluency effect for the low-quality deck on opening duration (`r p_txt(s1_effects$p[3])`), slide coverage (`r p_txt(s1_effects$p[6])`), and, on the log-odds scale of the preregistered logistic regression, positive reactions (*z* = `r f2(s1_logit$statistic[3])`, `r p_txt(s1_logit$p[3])`). In percentage points, the fluency effect on positive reactions was also smaller for the high-quality deck, by `r f2(-s1_effects$estimate[9])` points, but this difference was not significant (95% CI `r ci_txt(s1_effects$lower[9], s1_effects$upper[9])`, `r p_txt(s1_effects$p[9])`). The corresponding interactions for the healthcare startup were not significant (`r p_txt(s1_effects$p[12])`, `r p_txt(s1_effects$p[15])`, and `r p_txt(s1_effects$p[18])`, log-odds scale `r p_txt(s1_logit$p[6])`).
+
+::: {#s1-table-2a}
+```{r}
+#| label: study-1-table-2a
+
+bind_rows(Software = s1_sw, Healthcare = s1_hc, .id = "startup") |>
+  mutate(startup = factor(startup, levels = c("Software", "Healthcare"))) |>
+  group_by(startup, fluency, quality) |>
+  summarize(N = scales::comma(n()),
+            dur_mean = f2(mean(duration)), dur_sd = f2(sd(duration)),
+            cov_mean = sprintf('%.3f', mean(completion)), cov_sd = sprintf('%.3f', sd(completion)),
+            pos_n = sum(positive), pos_pct = f2(100 * mean(positive)), .groups = "drop") |>
+  mutate(fluency = ifelse(fluency == "high", "High", "Low"),
+         quality = ifelse(quality == "high", "High", "Low")) |>
+  select(-startup) |>
+  kbl(col.names = c("Fluency", "Quality", "N", "Mean", "SD", "Mean", "SD", "n", "%"),
+      caption = "Table 2, Panel A: Descriptive statistics, Study 1", align = "llccccccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 3, "Opening duration (s)" = 2, "Slide coverage (0–1)" = 2, "Positive reactions" = 2)) |>
+  row_spec(c(2, 6), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top") |>
+  pack_rows(index = c("Software startup" = 4, "Healthcare startup" = 4), indent = FALSE,
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#s1-table-2b}
+```{r}
+#| label: study-1-table-2b
+
+s1_effects |>
+  mutate(Outcome = rep(rep(c("Opening duration (s)", "Slide coverage (pp)", "Positive reactions (pp)"), each = 3), 2),
+         Effect = rep(c("Visual fluency", "Substantive quality", "Fluency × Quality"), 6),
+         Estimate = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Outcome, Effect, Estimate, CI, test, p) |>
+  kbl(col.names = c("Outcome", "Effect", "Estimate", "95% CI", "Test", "p"),
+      caption = "Table 2, Panel B: Effects of visual fluency and substantive quality, Study 1",
+      align = "llcccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:6, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(c(3, 6, 12, 15), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top") |>
+  pack_rows(index = c("Software startup" = 9, "Healthcare startup" = 9), indent = FALSE,
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Panel A: opening duration in seconds, slide coverage as the proportion of pitch deck slides viewed (0–1), and positive reactions as the number (n) and percentage (%) of retained deck viewers with a positive reaction. Panel B: both factors were effect-coded (low = −1, high = +1). Visual fluency and substantive quality are the differences between the high and the low level (two times the coefficient). Fluency × Quality is the interaction contrast (four times the coefficient), the fluency effect under high quality minus the fluency effect under low quality. Contrasts are in seconds (s) for opening duration and in percentage points (pp) for slide coverage and positive reactions. For positive reactions, they are differences between the model-based probabilities of the logistic regression (equal weights over the other factor), with delta-method confidence intervals and *z*-tests. The tests for opening duration and slide coverage are the preregistered *F*-tests of the two-factor ANOVAs (Type III sums of squares). All tests are two-sided, and confidence intervals are *t*-based for opening duration and slide coverage.
+:::
+
+::: {#s1-figure-1}
+```{r}
+#| fig-cap: "Figure 1: Effects of visual fluency and substantive quality in Study 1"
+#| fig-width: 10
+#| fig-asp: 0.7
+#| out-width: 100%
+
+# theme settings
+s1_theme <- theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0),
+        strip.text = element_markdown(size = 11, hjust = .5, lineheight = 1.2),
+        axis.text.x = element_text(size = 10.5),
+        axis.title.y = element_text(size = 12, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 12, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        )
+
+# data prep: fluency and quality effects of Table 2, Panel B
+s1_fig <- s1_effects |>
+  filter(effect != "interaction") |>
+  mutate(startup = factor(paste0("<b>", startup, " startup</b>"),
+                          levels = c("<b>Software startup</b>", "<b>Healthcare startup</b>")),
+         effect = factor(ifelse(effect == "fluency", "Visual\nfluency", "Substantive\nquality"),
+                         levels = c("Visual\nfluency", "Substantive\nquality")))
+
+# figure: opening duration (seconds)
+s1_fig_dur <- ggplot(filter(s1_fig, outcome == "duration"), aes(x = effect, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(startup), ncol = 1) +
+  scale_x_discrete(expand = expansion(add = c(.5, .8))) +
+  expand_limits(y = 0) +
+  hrbrthemes::theme_ipsum_rc() + s1_theme +
+  labs(x = NULL, y = "Difference (seconds)", title = "<b>Opening duration</b>")
+
+# figure: slide coverage (percentage points)
+s1_fig_cov <- ggplot(filter(s1_fig, outcome == "coverage"), aes(x = effect, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(startup), ncol = 1) +
+  scale_x_discrete(expand = expansion(add = c(.5, .8))) +
+  expand_limits(y = 0) +
+  hrbrthemes::theme_ipsum_rc() + s1_theme +
+  labs(x = NULL, y = "Difference (percentage points)", title = "<b>Slide coverage</b>")
+
+# figure: positive reactions (percentage points)
+s1_fig_pos <- ggplot(filter(s1_fig, outcome == "positive"), aes(x = effect, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(startup), ncol = 1) +
+  scale_x_discrete(expand = expansion(add = c(.5, .8))) +
+  expand_limits(y = 0) +
+  hrbrthemes::theme_ipsum_rc() + s1_theme +
+  labs(x = NULL, y = "Difference (percentage points)", title = "<b>Positive reactions</b>")
+
+# final (combined) figure
+s1_fig_dur + s1_fig_cov + s1_fig_pos +
+  plot_annotation(
+  title = "<b>Effects of visual fluency and substantive quality</b>",
+  subtitle = "High-minus-low contrasts and 95% confidence intervals (Study 1)",
+  caption = paste0("<i>Notes:</i><br>", "Differences between the high and the low level of each factor, in seconds for opening duration and in percentage points for slide coverage<br>",
+                   "(two times the effect-coded coefficient) and positive reactions (model-based probabilities, delta-method confidence intervals).<br>",
+                   "Retained deck viewers: software startup n = ", scales::comma(nrow(s1_sw)),
+                   ", healthcare startup n = ", scales::comma(nrow(s1_hc)), "."),
+  theme = theme(
+    plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+    plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+    plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+)
+```
+:::
+
+
+## Covariate models {#sec-study-1-covariates}
+
+The preregistered robustness models added investment experience (the number of previous startup investments), investor type (reference: business angel), gender (reference: female), and country (reference: United States) to visual fluency, substantive quality, and their interaction, with the same effect coding. They are linear regressions for opening duration and slide coverage ([Table C2](#s1-table-C2) for the software startup, [Table C3](#s1-table-C3) for the healthcare startup) and a logistic regression for positive reactions. As a further preregistered robustness check, positive reactions were also modeled with a Tobit specification ([Tables C4](#s1-table-C4) and [C5](#s1-table-C5)).
+
+*Results.* With the covariates, visual fluency and substantive quality increased all three outcomes in both startups (all `r p_txt(max(s1_mc_p))`), as they did without covariates. The fluency × quality interactions remained negative and significant for the software startup (opening duration `r p_txt(s1_mc_int_sw[1])`, slide coverage `r p_txt(s1_mc_int_sw[2])`, positive reactions `r p_txt(s1_mc_int_sw[3])`) and not significant for the healthcare startup (`r p_txt(s1_mc_int_hc[1])`, `r p_txt(s1_mc_int_hc[2])`, and `r p_txt(s1_mc_int_hc[3])`). The Tobit models showed the same pattern (fluency and quality both `r p_txt(max(reg_coefs(s1_mc_tob_sw)$p[2:3], reg_coefs(s1_mc_tob_hc)$p[2:3]))`, interaction software `r p_txt(reg_coefs(s1_mc_tob_sw)$p[reg_coefs(s1_mc_tob_sw)$term == "fluency1:quality1"])`, healthcare `r p_txt(reg_coefs(s1_mc_tob_hc)$p[reg_coefs(s1_mc_tob_hc)$term == "fluency1:quality1"])`).
+
+::: {#s1-table-C2}
+```{r}
+#| label: study-1-table-C2
+
+bind_rows(coef_rows(s1_mc_dur_sw, s1_terms, digits = 2),
+          data.frame(Term = c("R<sup>2</sup>", "Adjusted R<sup>2</sup>"),
+                     Estimate = weights::rd(c(summary(s1_mc_dur_sw)$r.squared, summary(s1_mc_dur_sw)$adj.r.squared), 3)),
+          coef_rows(s1_mc_cov_sw, s1_terms, digits = 3),
+          data.frame(Term = c("R<sup>2</sup>", "Adjusted R<sup>2</sup>"),
+                     Estimate = weights::rd(c(summary(s1_mc_cov_sw)$r.squared, summary(s1_mc_cov_sw)$adj.r.squared), 3))) |>
+  kbl(col.names = c("", "Coeff.", "SE", "95% CI", "t", "p"),
+      caption = "Table C2: Linear regressions with control variables for opening duration and slide coverage, Study 1 (software startup)",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:6, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Opening duration" = 18, "Slide coverage" = 18), label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#s1-table-C3}
+```{r}
+#| label: study-1-table-C3
+
+bind_rows(coef_rows(s1_mc_dur_hc, s1_terms, digits = 2),
+          data.frame(Term = c("R<sup>2</sup>", "Adjusted R<sup>2</sup>"),
+                     Estimate = weights::rd(c(summary(s1_mc_dur_hc)$r.squared, summary(s1_mc_dur_hc)$adj.r.squared), 3)),
+          coef_rows(s1_mc_cov_hc, s1_terms, digits = 3),
+          data.frame(Term = c("R<sup>2</sup>", "Adjusted R<sup>2</sup>"),
+                     Estimate = weights::rd(c(summary(s1_mc_cov_hc)$r.squared, summary(s1_mc_cov_hc)$adj.r.squared), 3))) |>
+  kbl(col.names = c("", "Coeff.", "SE", "95% CI", "t", "p"),
+      caption = "Table C3: Linear regressions with control variables for opening duration and slide coverage, Study 1 (healthcare startup)",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:6, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Opening duration" = 18, "Slide coverage" = 18), label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Fluency and quality were effect coded (low = −1, high = +1). Reference levels: business angel (investor type), female (gender), and United States (country). Investment experience is the number of previous startup investments. Opening duration in seconds, slide coverage as the proportion of pitch deck slides viewed (0–1). Two-sided *t*-tests and *t*-based 95% confidence intervals. *N* = `r scales::comma(nrow(s1_sw))` (Table C2) and `r scales::comma(nrow(s1_hc))` (Table C3) retained deck viewers.
+:::
+
+::: {#s1-table-C4}
+```{r}
+#| label: study-1-table-C4
+
+bind_rows(coef_rows(s1_mc_pos_sw, s1_terms, digits = 3),
+          data.frame(Term = "Tjur’s R<sup>2</sup>", Estimate = weights::rd(unname(performance::r2_tjur(s1_mc_pos_sw)), 3)),
+          coef_rows(s1_mc_tob_sw, s1_terms, digits = 3),
+          data.frame(Term = "Nagelkerke’s R<sup>2</sup>", Estimate = weights::rd(unname(performance::r2_nagelkerke(s1_mc_tob_sw)), 3))) |>
+  kbl(col.names = c("", "Coeff.", "SE", "95% CI", "z", "p"),
+      caption = "Table C4: Binary logit and Tobit models with control variables for positive reactions, Study 1 (software startup)",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:6, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Binary logit" = 17, "Tobit" = 17), label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#s1-table-C5}
+```{r}
+#| label: study-1-table-C5
+
+bind_rows(coef_rows(s1_mc_pos_hc, s1_terms, digits = 3),
+          data.frame(Term = "Tjur’s R<sup>2</sup>", Estimate = weights::rd(unname(performance::r2_tjur(s1_mc_pos_hc)), 3)),
+          coef_rows(s1_mc_tob_hc, s1_terms, digits = 3),
+          data.frame(Term = "Nagelkerke’s R<sup>2</sup>", Estimate = weights::rd(unname(performance::r2_nagelkerke(s1_mc_tob_hc)), 3))) |>
+  kbl(col.names = c("", "Coeff.", "SE", "95% CI", "z", "p"),
+      caption = "Table C5: Binary logit and Tobit models with control variables for positive reactions, Study 1 (healthcare startup)",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:6, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Binary logit" = 17, "Tobit" = 17), label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Fluency and quality were effect coded (low = −1, high = +1). Reference levels: business angel (investor type), female (gender), and United States (country). Investment experience is the number of previous startup investments. Positive reaction is a binary indicator (1 = yes, 0 = no). Binary logit coefficients are on the log-odds scale, and the Tobit model is left-censored at 0. Two-sided Wald *z*-tests and Wald 95% confidence intervals. *N* = `r scales::comma(nrow(s1_sw))` (Table C4) and `r scales::comma(nrow(s1_hc))` (Table C5) retained deck viewers.
+:::
+
+
+## Domain comparison {#sec-study-1-domain}
+
+The preregistration planned an exploratory comparison of the two startups if the main results differed between the domains, by adding the interaction with the domain to the analyses (AsPredicted #118675). It did not specify the model. For this comparison, we pooled the two samples and fitted a full-factorial model of visual fluency × substantive quality × startup domain for each outcome (linear regressions for opening duration and slide coverage, a logistic regression for positive reactions), with all three factors effect coded (software = +1, healthcare = −1). In these models, four times the fluency × domain and the quality × domain coefficients are the differences between the startups in the fluency and the quality contrasts of [Table 2, Panel B](#s1-table-2b) (software minus healthcare), and eight times the three-way coefficient is the difference in the interaction contrasts. For positive reactions, the differences between the startups refer to the percentage-point contrasts of [Table 2, Panel B](#s1-table-2b), from the model-based probabilities of the pooled logistic regression, with delta-method confidence intervals and z tests. [Table C6](#s1-table-C6) reports all nine comparisons.
+
+*Results.* The fluency and the quality effects on opening duration were larger for the software startup (`r p_txt(s1_domain$p[1])` and `r p_txt(s1_domain$p[2])`), whereas their effects on slide coverage were larger for the healthcare startup (`r p_txt(s1_domain$p[4])` and `r p_txt(s1_domain$p[5])`). Their effects on positive reactions did not differ significantly between the startups (`r p_txt(s1_domain$p[7])` and `r p_txt(s1_domain$p[8])`). The fluency × quality interactions did not differ significantly between the startups for opening duration, slide coverage, or positive reactions (`r p_txt(s1_domain$p[3])`, `r p_txt(s1_domain$p[6])`, and `r p_txt(s1_domain$p[9])`). The significant interactions of the software startup on opening duration and slide coverage and the nonsignificant interactions of the healthcare startup therefore do not establish a difference between the domains.
+
+::: {#s1-table-C6}
+```{r}
+#| label: study-1-table-C6
+
+s1_domain |>
+  mutate(Outcome = rep(c("Opening duration (s)", "Slide coverage (pp)", "Positive reactions (pp)"), each = 3),
+         Effect = rep(c("Visual fluency", "Substantive quality", "Fluency × Quality"), 3),
+         Software = f2(s1_effects$estimate[1:9]), Healthcare = f2(s1_effects$estimate[10:18]),
+         Comparison = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Outcome, Effect, Software, Healthcare, Comparison, CI, p) |>
+  kbl(col.names = c("Outcome", "Effect", "Software", "Healthcare", "Comparison", "95% CI", "p"),
+      caption = "Table C6: Comparisons between the software and healthcare startups, Study 1",
+      align = "llccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:7, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(c(3, 6), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top")
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Preregistered exploratory analysis with the full-factorial specification chosen for this comparison. Software and Healthcare are the contrasts of [Table 2, Panel B](#s1-table-2b). Comparison is the software minus the healthcare contrast, in seconds (s) for opening duration and in percentage points (pp) for slide coverage and positive reactions, from full-factorial models of visual fluency × substantive quality × startup domain on the pooled samples (*N* = `r scales::comma(nrow(s1_both))`). Two-sided *t*-tests (linear regressions) and delta-method *z*-tests (logistic regression), with the corresponding 95% confidence intervals.
+:::

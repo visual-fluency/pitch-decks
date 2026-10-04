@@ -1,0 +1,61 @@
+# Research Design Overview {#sec-design}
+
+The paper combines a field experiment (Study 1) with five preregistered online experiments (Studies 2A–2C, 3, and 4). [Table 1](#design-table-1) gives an overview of the six experiments. The numbers of participants are those after the participant-level exclusions (for Study 1, the analyzed deck viewers), and for Study 1 also the number of delivered emails.
+
+::: {#design-table-1}
+```{r}
+#| label: design-table-1
+
+# analysis samples of all experiments (processed data) and the delivered emails
+# of Study 1 (email exports: all sent emails without hard bounces)
+design_s1_emails_sw <- readr::read_csv(here(raw_dir, 'Study_1-1_Software_Emails.csv'))
+design_s1_emails_hc <- readr::read_csv(here(raw_dir, 'Study_1-2_Healthcare_Emails.csv'))
+design_s1_sw <- readr::read_csv(here(processed_dir, 'Study_1_Software.csv'))
+design_s1_hc <- readr::read_csv(here(processed_dir, 'Study_1_Healthcare.csv'))
+design_s2a <- readr::read_csv(here(processed_dir, 'Study_2A_Software.csv'))
+design_s2b <- readr::read_csv(here(processed_dir, 'Study_2B_Software_Replication.csv'))
+design_s2c <- readr::read_csv(here(processed_dir, 'Study_2C_Healthcare.csv'))
+design_s3 <- readr::read_csv(here(processed_dir, 'Study_3.csv'))
+design_s4 <- readr::read_csv(here(processed_dir, 'Study_4.csv'))
+
+data.frame(
+  Study = c("1", "2A", "2B", "2C", "3", "4"),
+  Question = c("Does design change engagement in investors’ regular deal flow?",
+               "Does design affect stated investment likelihood when a single deck is assessed? (software startup)",
+               "Same question (software startup, replication)",
+               "Same question (healthcare startup)",
+               "Is the design effect larger for attention than for investment allocation under common conditions?",
+               "Does a quality-rating effect remain after design’s informational value is challenged?"),
+  Participants = c(paste0("Early-stage investors; ", scales::comma(sum(design_s1_emails_sw$hard_bounce == 0) +
+                                                          sum(design_s1_emails_hc$hard_bounce == 0)),
+                          " delivered emails; ", scales::comma(nrow(design_s1_sw) + nrow(design_s1_hc)),
+                          " analyzed deck viewers"),
+                   paste0("Prolific participants; N\u00a0=\u00a0", nrow(design_s2a)),
+                   paste0("Prolific participants; N\u00a0=\u00a0", nrow(design_s2b)),
+                   paste0("Prolific participants; N\u00a0=\u00a0", nrow(design_s2c)),
+                   paste0("Prolific participants; N\u00a0=\u00a0", nrow(design_s3)),
+                   paste0("Prolific participants; N\u00a0=\u00a0", nrow(design_s4))),
+  Design = c("Field experiment; 2\u00a0×\u00a02 between subjects; software and healthcare startup",
+             "2\u00a0×\u00a02 between subjects; one deck",
+             "2\u00a0×\u00a02 between subjects; one deck",
+             "2\u00a0×\u00a02 between subjects; one deck",
+             "2\u00a0×\u00a02 within participants in each of two tasks; eight startups",
+             "Three instruction conditions between participants (1:5:2); 2\u00a0×\u00a02 within participants; four startups"),
+  Measures = c("Opening duration, slide coverage, positive reactions",
+               "Investment likelihood",
+               "Investment likelihood, processing ease, perceived venture quality",
+               "Investment likelihood, processing ease, perceived venture quality",
+               "Access task (time-limited): attention tokens; evaluation task: investment capital; ratings of processing ease and perceived venture quality",
+               "Evaluation task: investment capital; factual questions; beliefs about design; ratings of perceived venture quality and processing ease")
+) |>
+  kbl(col.names = c("Study", "Research question", "Participants", "Design", "Tasks and measures"),
+      caption = "Table 1: Overview of the studies", align = "lllll") |>
+  kable_styling() |>
+  column_spec(1, width = "1%", extra_css = "white-space: nowrap;") |>
+  column_spec(2:5, width = "11em")
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* 2 × 2 = visual fluency (high vs. low) × substantive quality (high vs. low). The Prolific participants had investment experience. Studies 2A–2C used the decks of Study 1; Studies 3 and 4 used the decks of eight AI startups. Scales: investment likelihood 0–100%, processing ease 0–100, perceived venture quality 1–7; allocations of 100 attention tokens or 100 units of investment capital. In Studies 3 and 4, the bonus depended on the substantive-quality score of a startup drawn in proportion to its allocation, and the later ratings did not affect it. Study 4's conditions: control, disclosure, disclosure plus explanation. Preregistrations: AsPredicted [#118675](https://aspredicted.org/fth5-wtc6.pdf) (Study 1), [#114380](https://aspredicted.org/f62v-xm2h.pdf) (Study 2A), [#116872](https://aspredicted.org/54nh-h4bt.pdf) (Study 2B), [#117215](https://aspredicted.org/crg2-gxf2.pdf) (Study 2C), [#304145](https://aspredicted.org/eh2924.pdf) (Study 3), and [#309446](https://aspredicted.org/ud65mi.pdf) (Study 4).
+:::
+:::

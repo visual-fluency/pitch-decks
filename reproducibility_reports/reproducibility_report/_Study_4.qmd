@@ -1,0 +1,625 @@
+# Study 4: Design Disclosure and an Explanation of Processing Ease {#sec-study-4}
+
+This section reproduces the results of Study 4 and Appendix F. The data processing, exclusions, and further analyses are documented in the [Study 4: Design Disclosure and an Explanation of Processing Ease Reproducibility Report](Detailed_Report_7_Design_Disclosure.qmd). Participants were randomly assigned to one of three instruction conditions: control, disclosure (the visual design was created by a design agency for the study and tells nothing about the startups or their founders), and disclosure plus explanation (the disclosure message and the explanation that visual design can make the same information feel easier or harder to process and that this feeling is not evidence about the venture). Perceived venture quality was rated on the 1–7 scale, so that effects on the ratings are in rating points. Allocations are measured in units of the 100-unit budget of investment capital, so that one unit equals one percentage point of a participant's allocation.
+
+```{r}
+#| label: study-4-analyses
+
+# Study 4: Design Disclosure and an Explanation of Processing Ease
+# AsPredicted Preregistration #309446
+#
+# processed data (one row per participant and one row per participant and deck)
+s4 <- readr::read_csv(here(processed_dir, 'Study_4.csv'))
+s4_long <- readr::read_csv(here(processed_dir, 'Study_4_long.csv'))
+# survey export: number of recorded and finished responses, and finished
+# responses per instruction condition (a1 = control, a2 = disclosure,
+# a3 = disclosure plus explanation)
+s4_raw <- readr::read_csv(here(raw_dir, 'Study_4_Qualtrics.csv'))
+s4_n <- c(recorded = nrow(s4_raw), finished = sum(s4_raw$Finished))
+s4_n_finished <- table(factor(s4_raw$arm[s4_raw$Finished == 1], levels = c("a1", "a2", "a3")))
+
+# convert conditions into factors with effect coding (high = 1, low = -1;
+# first half = 1, second half = -1; high quality decks first = 1, low quality
+# decks first = -1)
+s4_long$ID <- as.factor(s4_long$ID)
+s4_long$venture <- as.factor(s4_long$venture)
+s4_long$fluency <- as.factor(s4_long$fluency)
+s4_long$quality <- as.factor(s4_long$quality)
+s4_long$half <- as.factor(s4_long$half)
+s4_long$sequence <- as.factor(s4_long$sequence)
+contrasts(s4_long$fluency) <- contr.sum
+contrasts(s4_long$quality) <- contr.sum
+contrasts(s4_long$half) <- contr.sum
+contrasts(s4_long$sequence) <- contr.sum
+
+# analyzable sample: participants with four valid decks
+s4_valid <- s4 |> filter(!is.na(fluency_contrast_rating))
+
+# fluency contrasts on the ratings and on the allocations per condition
+s4_rating_control <- s4_valid$fluency_contrast_rating[s4_valid$condition == "control"]
+s4_rating_disclosure <- s4_valid$fluency_contrast_rating[s4_valid$condition == "disclosure"]
+s4_rating_explanation <- s4_valid$fluency_contrast_rating[s4_valid$condition == "disclosure_explanation"]
+s4_alloc_control <- s4_valid$fluency_contrast_allocation[s4_valid$condition == "control"]
+s4_alloc_disclosure <- s4_valid$fluency_contrast_allocation[s4_valid$condition == "disclosure"]
+s4_alloc_explanation <- s4_valid$fluency_contrast_allocation[s4_valid$condition == "disclosure_explanation"]
+
+# preregistered tests of the fluency contrast on the ratings: Hypothesis 3
+# (control, one-sided), Hypothesis 4 (disclosure, two-sided, with Bayes factor,
+# equivalence test, and decision rule), control vs. disclosure (Welch,
+# two-sided), and Hypothesis 5 (disclosure vs. disclosure plus explanation,
+# Welch, one-sided)
+s4_bound <- 0.225
+s4_h3 <- contrast_test(s4_rating_control, alternative = "greater")
+s4_h4 <- h4_tests(s4_rating_disclosure, s4_rating_control, bound = s4_bound)
+s4_control_disclosure <- welch_test(s4_rating_control, s4_rating_disclosure, alternative = "two.sided")
+s4_h5 <- welch_test(s4_rating_disclosure, s4_rating_explanation, alternative = "greater")
+# descriptive estimate: fluency contrast in the disclosure plus explanation condition
+s4_explanation <- contrast_test(s4_rating_explanation, alternative = "two.sided")
+# secondary test: Welch ANOVA across the three conditions
+s4_welch_anova <- oneway.test(fluency_contrast_rating ~ condition, data = s4_valid, var.equal = FALSE)
+
+# fluency contrast on the allocations: control (preregistered, one-sided),
+# disclosure (preregistered, two-sided), and disclosure plus explanation
+# (preregistered exploratory, two-sided)
+s4_alloc_fluency_control <- contrast_test(s4_alloc_control, alternative = "greater")
+s4_alloc_fluency_disclosure <- contrast_test(s4_alloc_disclosure, alternative = "two.sided")
+s4_alloc_fluency_explanation <- contrast_test(s4_alloc_explanation, alternative = "two.sided")
+
+# observed means of the two low and the two high fluency decks (ratings and
+# allocations) per condition
+s4_means <- s4_valid |>
+  mutate(rating_lf = rowMeans(pick(rating_hq_lf, rating_lq_lf)),
+         rating_hf = rowMeans(pick(rating_hq_hf, rating_lq_hf)),
+         allocation_lf = rowMeans(pick(allocation_hq_lf, allocation_lq_lf)),
+         allocation_hf = rowMeans(pick(allocation_hq_hf, allocation_lq_hf))) |>
+  group_by(condition) |>
+  summarize(rating_lf = mean(rating_lf), rating_hf = mean(rating_hf),
+            allocation_lf = mean(allocation_lf), allocation_hf = mean(allocation_hf))
+
+# belief check (analyzable sample): means per condition and Welch t-tests of
+# disclosure vs. control for item 1 (preregistered, one-sided, disclosure
+# lower) and item 2 (not preregistered, two-sided)
+s4_beliefs <- s4_valid |>
+  group_by(condition) |>
+  summarize(N = n(), m_quality = mean(belief_quality), sd_quality = sd(belief_quality),
+            m_founders = mean(belief_founders), sd_founders = sd(belief_founders))
+s4_belief_quality <- welch_test(s4_valid$belief_quality[s4_valid$condition == "disclosure"],
+                                s4_valid$belief_quality[s4_valid$condition == "control"], alternative = "less")
+s4_belief_founders <- welch_test(s4_valid$belief_founders[s4_valid$condition == "disclosure"],
+                                 s4_valid$belief_founders[s4_valid$condition == "control"], alternative = "two.sided")
+
+# factual recovery: mixed logistic regressions of a correct answer on visual
+# fluency and substantive quality per condition (answers to valid decks; random
+# intercepts for participants and startups); preregistered for the disclosure
+# condition, preregistered exploratory for the other two conditions
+# -Note: bobyqa optimizer, since the model for the disclosure condition does not
+#        converge with the default optimizer
+s4_rec_control <- s4_long |> filter(condition == "control" & !is.na(recovery_correct))
+s4_rec_disclosure <- s4_long |> filter(condition == "disclosure" & !is.na(recovery_correct))
+s4_rec_explanation <- s4_long |> filter(condition == "disclosure_explanation" & !is.na(recovery_correct))
+s4_m_rec_control <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                                data = s4_rec_control, family = binomial,
+                                control = lme4::glmerControl(optimizer = "bobyqa"))
+s4_m_rec_disclosure <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                                   data = s4_rec_disclosure, family = binomial,
+                                   control = lme4::glmerControl(optimizer = "bobyqa"))
+s4_m_rec_explanation <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                                    data = s4_rec_explanation, family = binomial,
+                                    control = lme4::glmerControl(optimizer = "bobyqa"))
+s4_rec_or_control <- glmer_or(s4_m_rec_control, "fluency1")
+s4_rec_or_disclosure <- glmer_or(s4_m_rec_disclosure, "fluency1")
+s4_rec_or_explanation <- glmer_or(s4_m_rec_explanation, "fluency1")
+
+# manipulation checks (preregistered; control condition, all decks; random
+# intercepts for participants and startups): processing ease by visual fluency
+# and perceived venture quality by substantive quality
+s4_long_control <- s4_long |> filter(condition == "control")
+s4_m_ease_fluency <- lmerTest::lmer(ease ~ fluency + (1 | ID) + (1 | venture), s4_long_control)
+s4_m_quality_quality <- lmerTest::lmer(rating_all ~ quality + (1 | ID) + (1 | venture), s4_long_control)
+s4_mc_ease_fluency <- lmer_diff(s4_m_ease_fluency, "fluency1")
+s4_mc_quality_quality <- lmer_diff(s4_m_quality_quality, "quality1")
+
+# preregistered exploratory analyses (two-sided; random intercepts for participants
+# and startups; invalid decks not included)
+#
+# fluency x quality interactions per condition, and the three-way interaction
+# with the condition (disclosure = 1, disclosure plus explanation = -1)
+s4_long_act <- s4_long |> filter(condition %in% c("disclosure", "disclosure_explanation"))
+s4_long_act$condition <- as.factor(s4_long_act$condition)
+contrasts(s4_long_act$condition) <- contr.sum
+s4_m_int_rating_control <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                          filter(s4_long, condition == "control"))
+s4_m_int_rating_disclosure <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                             filter(s4_long, condition == "disclosure"))
+s4_m_int_rating_explanation <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                              filter(s4_long, condition == "disclosure_explanation"))
+s4_m_int_rating_act <- lmerTest::lmer(rating ~ fluency * quality * condition + (1 | ID) + (1 | venture),
+                                      s4_long_act)
+s4_m_int_alloc_control <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                         filter(s4_long, condition == "control"))
+s4_m_int_alloc_disclosure <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                            filter(s4_long, condition == "disclosure"))
+s4_m_int_alloc_explanation <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                             filter(s4_long, condition == "disclosure_explanation"))
+s4_m_int_alloc_act <- lmerTest::lmer(allocation ~ fluency * quality * condition + (1 | ID) + (1 | venture),
+                                     s4_long_act)
+# difference of the fluency effects between high and low quality decks
+# (4 x coefficient), and this difference in the disclosure minus the disclosure
+# plus explanation condition (8 x coefficient)
+s4_int_rating <- bind_rows(lmer_multi(s4_m_int_rating_control, "fluency1:quality1", 4),
+                           lmer_multi(s4_m_int_rating_disclosure, "fluency1:quality1", 4),
+                           lmer_multi(s4_m_int_rating_explanation, "fluency1:quality1", 4),
+                           lmer_multi(s4_m_int_rating_act, "fluency1:quality1:condition1", 8))
+s4_int_alloc <- bind_rows(lmer_multi(s4_m_int_alloc_control, "fluency1:quality1", 4),
+                          lmer_multi(s4_m_int_alloc_disclosure, "fluency1:quality1", 4),
+                          lmer_multi(s4_m_int_alloc_explanation, "fluency1:quality1", 4),
+                          lmer_multi(s4_m_int_alloc_act, "fluency1:quality1:condition1", 8))
+
+# position effects on the ratings (all conditions; positions as factors; type
+# III tests with Satterthwaite's degrees of freedom)
+s4_m_position <- lmerTest::lmer(rating ~ fluency + quality + factor(position) + factor(rating_position) +
+                                  (1 | ID) + (1 | venture), s4_long)
+s4_position <- anova(s4_m_position)[c("factor(position)", "factor(rating_position)"), ]
+# fluency effect on the ratings by half (per condition) and by rotation
+# sequence (all conditions): first minus second half, high quality decks first
+# minus low quality decks first (4 x coefficient)
+s4_m_half_control <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                    filter(s4_long, condition == "control"))
+s4_m_half_disclosure <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                       filter(s4_long, condition == "disclosure"))
+s4_m_half_explanation <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                        filter(s4_long, condition == "disclosure_explanation"))
+s4_m_sequence <- lmerTest::lmer(rating ~ fluency * sequence + quality + (1 | ID) + (1 | venture), s4_long)
+s4_order <- bind_rows(lmer_multi(s4_m_half_control, "fluency1:half1", 4),
+                      lmer_multi(s4_m_half_disclosure, "fluency1:half1", 4),
+                      lmer_multi(s4_m_half_explanation, "fluency1:half1", 4),
+                      lmer_multi(s4_m_sequence, "fluency1:sequence1", 4))
+
+# preregistered sensitivity analyses of Hypothesis 4: (a) without participants
+# who needed all three instruction attempts (including those who failed all
+# three), (b) without participants who answered anything other than "No" to the
+# hypothesis-guess item (each restriction applied to all conditions)
+s4_sens_1 <- s4_valid |> filter(comprehension_attempts < 3)
+s4_sens_2 <- s4_valid |> filter(suspicion_probe == "No")
+s4_h4_sens_1 <- h4_tests(s4_sens_1$fluency_contrast_rating[s4_sens_1$condition == "disclosure"],
+                         s4_sens_1$fluency_contrast_rating[s4_sens_1$condition == "control"], bound = s4_bound)
+s4_h4_sens_2 <- h4_tests(s4_sens_2$fluency_contrast_rating[s4_sens_2$condition == "disclosure"],
+                         s4_sens_2$fluency_contrast_rating[s4_sens_2$condition == "control"], bound = s4_bound)
+
+# not preregistered: fluency contrasts in the disclosure condition by the
+# answer to belief item 1 ("nothing at all" = 1 vs. higher answers)
+s4_disclosure <- s4_valid |> filter(condition == "disclosure")
+s4_nothing_rating <- contrast_test(s4_disclosure$fluency_contrast_rating[s4_disclosure$belief_quality == 1])
+s4_nothing_alloc <- contrast_test(s4_disclosure$fluency_contrast_allocation[s4_disclosure$belief_quality == 1])
+s4_other_rating <- contrast_test(s4_disclosure$fluency_contrast_rating[s4_disclosure$belief_quality > 1])
+s4_other_alloc <- contrast_test(s4_disclosure$fluency_contrast_allocation[s4_disclosure$belief_quality > 1])
+```
+
+
+## Sample {#sec-study-4-sample}
+
+Qualtrics recorded `r scales::comma(s4_n["recorded"])` responses, of which `r scales::comma(s4_n["finished"])` were finished (`r s4_n_finished[["a1"]]` in the control, `r s4_n_finished[["a2"]]` in the disclosure, and `r s4_n_finished[["a3"]]` in the disclosure plus explanation condition). After the preregistered exclusions at the participant level, `r nrow(s4)` participants remained (`r sum(s4$condition == "control")` control, `r sum(s4$condition == "disclosure")` disclosure, and `r sum(s4$condition == "disclosure_explanation")` disclosure plus explanation). The preregistered exclusions at the observation level (decks that were not loaded correctly, were viewed for less than 3 seconds or more than 30 minutes, or had no quality rating) affected `r sum(s4_long$invalid)` of the `r scales::comma(nrow(s4_long))` decks, which belonged to `r length(unique(s4_long$ID[s4_long$invalid]))` participants. The analyzable sample for the preregistered tests, that is, the participants with four valid decks, therefore comprises `r nrow(s4_valid)` participants (`r sum(s4_valid$condition == "control")` control, `r sum(s4_valid$condition == "disclosure")` disclosure, and `r sum(s4_valid$condition == "disclosure_explanation")` disclosure plus explanation). [Table F1](#s4-table-F1) describes the participants per condition.
+
+::: {#s4-table-F1}
+```{r}
+#| label: study-4-table-F1
+
+# participants per condition
+s4_f1_control <- s4 |> filter(condition == "control")
+s4_f1_disclosure <- s4 |> filter(condition == "disclosure")
+s4_f1_explanation <- s4 |> filter(condition == "disclosure_explanation")
+s4_gender_control <- table(factor(s4_f1_control$gender, levels = c("Male", "Female", "Other")))
+s4_gender_disclosure <- table(factor(s4_f1_disclosure$gender, levels = c("Male", "Female", "Other")))
+s4_gender_explanation <- table(factor(s4_f1_explanation$gender, levels = c("Male", "Female", "Other")))
+
+data.frame(
+  Characteristic = c("Age (years)", "Startup investment experience (years)",
+                     "Gender", "Male", "Female", "Non-binary or prefer not to say"),
+  Control = c(paste0(f2(mean(s4_f1_control$age, na.rm = TRUE)), " (", f2(sd(s4_f1_control$age, na.rm = TRUE)), ")"),
+              paste0(f2(mean(s4_f1_control$invest_experience, na.rm = TRUE)), " (", f2(sd(s4_f1_control$invest_experience, na.rm = TRUE)), ")"),
+              "",
+              paste0(as.vector(s4_gender_control), " (", sprintf('%.1f', 100 * as.vector(s4_gender_control) / nrow(s4_f1_control)), "%)")),
+  Disclosure = c(paste0(f2(mean(s4_f1_disclosure$age, na.rm = TRUE)), " (", f2(sd(s4_f1_disclosure$age, na.rm = TRUE)), ")"),
+                 paste0(f2(mean(s4_f1_disclosure$invest_experience, na.rm = TRUE)), " (", f2(sd(s4_f1_disclosure$invest_experience, na.rm = TRUE)), ")"),
+                 "",
+                 paste0(as.vector(s4_gender_disclosure), " (", sprintf('%.1f', 100 * as.vector(s4_gender_disclosure) / nrow(s4_f1_disclosure)), "%)")),
+  Explanation = c(paste0(f2(mean(s4_f1_explanation$age, na.rm = TRUE)), " (", f2(sd(s4_f1_explanation$age, na.rm = TRUE)), ")"),
+                  paste0(f2(mean(s4_f1_explanation$invest_experience, na.rm = TRUE)), " (", f2(sd(s4_f1_explanation$invest_experience, na.rm = TRUE)), ")"),
+                  "",
+                  paste0(as.vector(s4_gender_explanation), " (", sprintf('%.1f', 100 * as.vector(s4_gender_explanation) / nrow(s4_f1_explanation)), "%)"))
+) |>
+  kbl(col.names = c("Characteristic", paste0("<i>N</i> = ", nrow(s4_f1_control)),
+                    paste0("<i>N</i> = ", nrow(s4_f1_disclosure)), paste0("<i>N</i> = ", nrow(s4_f1_explanation))),
+      caption = "Table F1: Participant characteristics by condition, Study 4", align = "lrrr", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Control" = 1, "Disclosure" = 1, "Disclosure + explanation" = 1),
+                   extra_css = "white-space: nowrap;") |>
+  row_spec(3, bold = TRUE) |>
+  column_spec(1:4, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Continuous characteristics are reported as means (standard deviations), and gender categories are reported as counts (percentages). All participants after the preregistered exclusions at the participant level.
+:::
+:::
+
+
+## Preregistered contrasts {#sec-study-4-contrasts}
+
+For each participant $i$, we computed a fluency contrast from the perceived venture quality ratings,
+
+$$
+\text{FC}_{i} = \frac{1}{2} \sum_{d \in \text{HF}_{i}} r_{id} - \frac{1}{2} \sum_{d \in \text{LF}_{i}} r_{id},
+$$
+
+where $r_{id}$ is the participant's rating (1–7) of deck $d$, and $\text{HF}_{i}$ and $\text{LF}_{i}$ are the two high and the two low fluency decks that the participant saw. Since each of these two sets contains one high and one low quality deck, substantive quality is balanced out of the fluency contrast by construction. The fluency contrast on the allocations is defined analogously (in units). All preregistered tests use the analyzable sample and α = .05. Hypotheses 3, 4, and 5 are H1, H2, and H3 in the preregistration. Hypothesis 3 predicts a positive fluency contrast on the ratings in the control condition and was tested with a one-sided one-sample *t*-test. Hypothesis 4 predicts that the fluency contrast remains positive in the disclosure condition. It was tested with a two-sided one-sample *t*-test, together with the 95% confidence interval, the Bayes factor against the point null of zero (BF<sub>10</sub>, Cauchy prior, r = 0.707), and an equivalence test against the bounds of −`r s4_bound` and +`r s4_bound` rating points (two one-sided tests, TOST). Equivalence requires that both one-sided tests are significant, which is the same as the 90% confidence interval lying within both bounds. Hypothesis 5 predicts a smaller fluency contrast in the disclosure plus explanation condition than in the disclosure condition and was tested with a one-sided Welch *t*-test of the difference between the two conditions (Disclosure − explanation). A further preregistered two-sided Welch *t*-test compared the control and the disclosure condition (Control − disclosure). The fluency contrast on the allocations was preregistered with a one-sided test in the control condition and a two-sided test in the disclosure condition, and the same contrast in the disclosure plus explanation condition was preregistered as exploratory. [Table 5, Panel A](#s4-table-5a) reports the results for the ratings and [Table 5, Panel B](#s4-table-5b) those for the allocations. Panel A also shows the effect of substantive quality on the ratings, the preregistered manipulation check in the control condition (see [Manipulation checks](#sec-study-4-mc)).
+
+The preregistration applied the following decision rule to the fluency contrast in the disclosure condition, with the cases checked in this order:
+
+1. The contrast is significantly negative with the estimate at or beyond −`r s4_bound`: overcorrection.
+2. The contrast is significantly positive with the estimate at least `r s4_bound`: persistence supported.
+3. Equivalence holds and the fluency contrast is significantly larger in the control condition (Control − disclosure): switched off (a significant effect within the bounds is reported as such, in either direction).
+4. The contrast is significantly positive but below `r s4_bound`, without equivalence: reduced but present.
+5. Otherwise: indeterminate.
+
+In addition, the preregistration required that disclosure lowered the first belief item relative to the control condition before the result could be interpreted as a test of design's informational role (see [Belief check](#sec-study-4-belief)).
+
+*Results.* In the control condition, high-fluency decks received higher quality ratings than low-fluency decks (Δ = `r f2(s4_h3$estimate)`, 95% CI `r ci_txt(s4_h3$lower, s4_h3$upper)`, one-sided `r p_txt(s4_h3$p)`), which supports Hypothesis 3. Disclosure lowered how much participants reported that the design told them about venture quality, from `r f2(s4_beliefs$m_quality[s4_beliefs$condition == "control"])` in the control condition to `r f2(s4_beliefs$m_quality[s4_beliefs$condition == "disclosure"])` (one-sided `r p_txt(s4_belief_quality$p)`, see [Table F2, Panel A](#s4-table-F2a)), which meets the preregistered prerequisite. Under disclosure, high-fluency decks still received higher quality ratings (Δ = `r f2(s4_h4$estimate)`, 95% CI `r ci_txt(s4_h4$lower, s4_h4$upper)`, two-sided `r p_txt(s4_h4$p)`, BF<sub>10</sub> = `r bf_fmt(s4_h4$bf10)`). The estimate exceeded `r s4_bound`, and its 90% confidence interval `r ci_txt(s4_h4$lower_90, s4_h4$upper_90)` lay above the upper equivalence bound (TOST `r p_txt(s4_h4$p_tost)`). This is case `r s4_h4$case` of the decision rule (`r s4_h4$outcome`), which supports Hypothesis 4 for the disclosure condition as a whole. The difference between the control and the disclosure condition was not significant (Control − disclosure = `r f2(s4_control_disclosure$estimate)`, 95% CI `r ci_txt(s4_control_disclosure$lower, s4_control_disclosure$upper)`, two-sided `r p_txt(s4_control_disclosure$p)`), so whether disclosure reduced the effect in part remains open. With the added explanation of processing ease, the fluency contrast was `r f2(s4_explanation$estimate)` (95% CI `r ci_txt(s4_explanation$lower, s4_explanation$upper)`), compared with `r f2(s4_h4$estimate)` under disclosure alone. The difference between the two conditions did not support Hypothesis 5 (Disclosure − explanation = `r f2(s4_h5$estimate)`, 95% CI `r ci_txt(s4_h5$lower, s4_h5$upper)`, one-sided `r p_txt(s4_h5$p)`). Its confidence interval includes further reductions of up to `r f2(s4_h5$upper)` rating points, so the result does not show that the explanation had no effect. Higher substantive quality increased perceived venture quality in the control condition (Δ = `r f2(s4_mc_quality_quality$estimate)`, 95% CI `r ci_txt(s4_mc_quality_quality$lower, s4_mc_quality_quality$upper)`, `r p_txt(s4_mc_quality_quality$p)`).
+
+High-fluency decks received on average `r f2(s4_alloc_fluency_control$estimate)` more units of investment capital than low-fluency decks in the control condition (95% CI `r ci_txt(s4_alloc_fluency_control$lower, s4_alloc_fluency_control$upper)`, one-sided `r p_txt(s4_alloc_fluency_control$p)`). In the disclosure condition, the contrast was `r f2(s4_alloc_fluency_disclosure$estimate)` units (95% CI `r ci_txt(s4_alloc_fluency_disclosure$lower, s4_alloc_fluency_disclosure$upper)`, two-sided `r p_txt(s4_alloc_fluency_disclosure$p)`). Since the preregistration considered the allocations too noisy for an equivalence test at this sample size, this nonsignificant result does not show that the effect was absent. In the disclosure plus explanation condition, the preregistered exploratory estimate was `r f2(s4_alloc_fluency_explanation$estimate)` units (95% CI `r ci_txt(s4_alloc_fluency_explanation$lower, s4_alloc_fluency_explanation$upper)`, two-sided `r p_txt(s4_alloc_fluency_explanation$p)`).
+
+::: {#s4-table-5a}
+```{r}
+#| label: study-4-table-5a
+
+data.frame(
+  Condition = c("Control", "Disclosure", "Disclosure + explanation",
+                "Control − disclosure", "Disclosure − explanation", "Control", "Disclosure"),
+  N = c(s4_h3$N, s4_h4$N, s4_explanation$N,
+        paste0(s4_control_disclosure$N_1, " / ", s4_control_disclosure$N_2),
+        paste0(s4_h5$N_1, " / ", s4_h5$N_2),
+        lme4::ngrps(s4_m_quality_quality)[["ID"]], s4_h4$N),
+  Low = c(f2(s4_means$rating_lf), "", "",
+          f2(mean(s4_long_control$rating_all[s4_long_control$quality == "low"])), ""),
+  High = c(f2(s4_means$rating_hf), "", "",
+           f2(mean(s4_long_control$rating_all[s4_long_control$quality == "high"])), ""),
+  Estimate = f2(c(s4_h3$estimate, s4_h4$estimate, s4_explanation$estimate,
+                  s4_control_disclosure$estimate, s4_h5$estimate, s4_mc_quality_quality$estimate,
+                  s4_h4$estimate)),
+  CI = ci_txt(c(s4_h3$lower, s4_h4$lower, s4_explanation$lower,
+                s4_control_disclosure$lower, s4_h5$lower, s4_mc_quality_quality$lower, s4_h4$lower_90),
+              c(s4_h3$upper, s4_h4$upper, s4_explanation$upper,
+                s4_control_disclosure$upper, s4_h5$upper, s4_mc_quality_quality$upper, s4_h4$upper_90)),
+  p = c(p_tbl(s4_h3$p), p_tbl(s4_h4$p), "—", p_tbl(s4_control_disclosure$p), p_tbl(s4_h5$p),
+        p_tbl(s4_mc_quality_quality$p), p_tbl(s4_h4$p_tost)),
+  Test = c("one-sided", "two-sided", "—", "two-sided", "one-sided", "two-sided", bf_fmt(s4_h4$bf10)),
+  Status = c("Hypothesis 3", "Hypothesis 4", "descriptive", "preregistered", "Hypothesis 5", "preregistered",
+             "Hypothesis 4")
+) |>
+  kbl(col.names = c("Condition", "N", "Low", "High", "Estimate", "95% CI", "p", "Test", "Status"),
+      caption = "Table 5, Panel A: Perceived venture quality (1–7), Study 4", align = "lcccccccl", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = setNames(c(3, 2, 1, 1),
+                              c("Fluency effect (high − low fluency)", "Difference of the fluency effects",
+                                "Substantive quality effect (high − low quality)",
+                                paste0("Equivalence test (bounds ±", s4_bound, ") and Bayes factor"))),
+            label_row_css = "text-align: center;", indent = FALSE) |>
+  column_spec(1:9, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  repeat_header(last_labels = c("95% CI" = "90% CI", "p" = "p (TOST)", "Test" = "BF<sub>10</sub>"))
+```
+:::
+
+::: {#s4-table-5b}
+```{r}
+#| label: study-4-table-5b
+
+data.frame(
+  Condition = c("Control", "Disclosure", "Disclosure + explanation"),
+  N = c(s4_alloc_fluency_control$N, s4_alloc_fluency_disclosure$N, s4_alloc_fluency_explanation$N),
+  Low = f2(s4_means$allocation_lf),
+  High = f2(s4_means$allocation_hf),
+  Estimate = f2(c(s4_alloc_fluency_control$estimate, s4_alloc_fluency_disclosure$estimate,
+                  s4_alloc_fluency_explanation$estimate)),
+  CI = ci_txt(c(s4_alloc_fluency_control$lower, s4_alloc_fluency_disclosure$lower, s4_alloc_fluency_explanation$lower),
+              c(s4_alloc_fluency_control$upper, s4_alloc_fluency_disclosure$upper, s4_alloc_fluency_explanation$upper)),
+  p = p_tbl(c(s4_alloc_fluency_control$p, s4_alloc_fluency_disclosure$p, s4_alloc_fluency_explanation$p)),
+  Test = c("one-sided", "two-sided", "two-sided"),
+  Status = c("preregistered", "preregistered", "exploratory")
+) |>
+  kbl(col.names = c("Condition", "N", "Low", "High", "Estimate", "95% CI", "p", "Test", "Status"),
+      caption = "Table 5, Panel B: Investment allocation (units), Study 4", align = "lcccccccl", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Fluency effect (high − low fluency)" = 3),
+            label_row_css = "text-align: center;", indent = FALSE) |>
+  column_spec(1:9, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Estimates in rating points of the 1–7 scale (Panel A) and in units of the 100-unit budget (Panel B). Effects are high minus low. Fluency effects are participant-level contrasts in the analyzable sample (one-sample *t*-tests). Differences in the fluency effects between conditions are Welch *t*-tests, with *N* for both conditions. The substantive-quality effect on the ratings is the preregistered manipulation check in the control condition: the model-based difference in a mixed-effects model with random intercepts for participants and startups (using Satterthwaite’s degrees of freedom). Hypothesis tests were preregistered without adjustment across tests. The fluency effect on the ratings in the disclosure plus explanation condition is descriptive. Exploratory: planned exploratory analysis in the preregistration. The Bayes factor is against the point null of zero (Cauchy prior, *r* = 0.707). Equivalence requires the 90% confidence interval to lie within the bounds, and *p* (TOST) is the larger *p*-value of the two one-sided tests. All 95% confidence intervals are two-sided.
+:::
+
+
+## Belief check {#sec-study-4-belief}
+
+After the allocation, participants rated how much the visual design of the decks had told them about the ventures' quality (item 1) and about their founders' competence (item 2), from 1 (nothing at all) to 7 (a great deal). The preregistered belief check was a one-sided Welch *t*-test of item 1 (disclosure lower than control). Item 2 was compared between the same two conditions with a two-sided Welch *t*-test, which was not preregistered. Both tests use the analyzable sample. [Table F2, Panel A](#s4-table-F2a) shows the means per condition and the two tests.
+
+*Results.* Disclosure lowered item 1 from `r f2(s4_beliefs$m_quality[s4_beliefs$condition == "control"])` in the control condition to `r f2(s4_beliefs$m_quality[s4_beliefs$condition == "disclosure"])` (Disclosure − control = `r f2(s4_belief_quality$estimate)`, 95% CI `r ci_txt(s4_belief_quality$lower, s4_belief_quality$upper)`, one-sided `r p_txt(s4_belief_quality$p)`), which meets the preregistered prerequisite. The mean in the disclosure plus explanation condition was `r f2(s4_beliefs$m_quality[s4_beliefs$condition == "disclosure_explanation"])`. The answers still varied within the disclosure condition (SD = `r f2(s4_beliefs$sd_quality[s4_beliefs$condition == "disclosure"])`). Item 2 decreased similarly (Disclosure − control = `r f2(s4_belief_founders$estimate)`, 95% CI `r ci_txt(s4_belief_founders$lower, s4_belief_founders$upper)`, two-sided `r p_txt(s4_belief_founders$p)`).
+
+::: {#s4-table-F2a}
+```{r}
+#| label: study-4-table-F2a
+
+data.frame(
+  Condition = rep(c("Control", "Disclosure", "Disclosure + explanation", "Disclosure − control"), 2),
+  N = c(s4_beliefs$N, paste0(s4_belief_quality$N_1, " / ", s4_belief_quality$N_2),
+        s4_beliefs$N, paste0(s4_belief_founders$N_1, " / ", s4_belief_founders$N_2)),
+  Mean = c(paste0(f2(s4_beliefs$m_quality), " (", f2(s4_beliefs$sd_quality), ")"), "",
+           paste0(f2(s4_beliefs$m_founders), " (", f2(s4_beliefs$sd_founders), ")"), ""),
+  Difference = c("", "", "", f2(s4_belief_quality$estimate), "", "", "", f2(s4_belief_founders$estimate)),
+  CI = c("", "", "", ci_txt(s4_belief_quality$lower, s4_belief_quality$upper),
+         "", "", "", ci_txt(s4_belief_founders$lower, s4_belief_founders$upper)),
+  p = c("", "", "", p_tbl(s4_belief_quality$p), "", "", "", p_tbl(s4_belief_founders$p)),
+  Test = c("", "", "", "one-sided", "", "", "", "two-sided")
+) |>
+  kbl(col.names = c("Condition", "N", "Mean (SD)", "Difference", "95% CI", "p", "Test"),
+      caption = "Table F2, Panel A: Belief check, Study 4", align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Item 1: venture quality (preregistered test)" = 4,
+                      "Item 2: founders’ competence (test not preregistered)" = 4),
+            label_row_css = "text-align: center;") |>
+  column_spec(1:7, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Both items on a scale from 1 (nothing at all) to 7 (a great deal), analyzable sample. Differences are disclosure minus control, with Welch *t*-tests and two-sided 95% confidence intervals.
+:::
+
+
+## Secondary Welch ANOVA {#sec-study-4-anova}
+
+The preregistered secondary test was a Welch ANOVA of the fluency contrast on the ratings across the three conditions, based on the analyzable sample ([Table F2, Panel B](#s4-table-F2b)).
+
+*Results.* The fluency contrast did not differ significantly between the three conditions (*F*(`r s4_welch_anova$parameter[[1]]`, `r sprintf('%.1f', s4_welch_anova$parameter[[2]])`) = `r f2(s4_welch_anova$statistic)`, `r p_txt(s4_welch_anova$p.value)`).
+
+::: {#s4-table-F2b}
+```{r}
+#| label: study-4-table-F2b
+
+data.frame(Test = "Fluency contrast (ratings) across the three conditions", N = nrow(s4_valid),
+           df1 = s4_welch_anova$parameter[[1]], df2 = sprintf('%.1f', s4_welch_anova$parameter[[2]]),
+           F = f2(s4_welch_anova$statistic), p = p_tbl(s4_welch_anova$p.value)) |>
+  kbl(col.names = c("Welch ANOVA", "N", "df<sub>1</sub>", "df<sub>2</sub>", "F", "p"),
+      caption = "Table F2, Panel B: Preregistered secondary Welch ANOVA, Study 4", align = "lccccc", escape = FALSE) |>
+  kable_styling()
+```
+:::
+
+
+## Factual recovery {#sec-study-4-recovery}
+
+After each deck, participants answered one four-option question about a fact in its substantive content. The preregistered analysis was a mixed logistic regression in the disclosure condition that predicts a correct answer from visual fluency and substantive quality (both effect-coded), with random intercepts for participants and startups, and in which only the fluency effect is interpreted. With effect coding, the odds ratio of a correct answer after high- vs. low-fluency decks is exp(2 × coefficient). We used the bobyqa optimizer, because the model does not converge with the default optimizer. The model includes the answers to all valid decks ([Table F2, Panel C](#s4-table-F2c)).
+
+*Results.* In the disclosure condition, participants answered `r sprintf('%.2f', 100 * mean(s4_rec_disclosure$recovery_correct[s4_rec_disclosure$fluency == "high"]))`% of the questions correctly after high-fluency decks and `r sprintf('%.2f', 100 * mean(s4_rec_disclosure$recovery_correct[s4_rec_disclosure$fluency == "low"]))`% after low-fluency decks. The fluency effect was not significant (odds ratio = `r f2(s4_rec_or_disclosure$estimate)`, 95% CI `r ci_txt(s4_rec_or_disclosure$lower, s4_rec_or_disclosure$upper)`, `r p_txt(s4_rec_or_disclosure$p)`), so there is no evidence that fluent design helped participants recover the facts.
+
+::: {#s4-table-F2c}
+```{r}
+#| label: study-4-table-F2c
+
+data.frame(Condition = "Disclosure", Answers = scales::comma(nobs(s4_m_rec_disclosure)),
+           Participants = lme4::ngrps(s4_m_rec_disclosure)[["ID"]],
+           Low = sprintf('%.2f', 100 * mean(s4_rec_disclosure$recovery_correct[s4_rec_disclosure$fluency == "low"])),
+           High = sprintf('%.2f', 100 * mean(s4_rec_disclosure$recovery_correct[s4_rec_disclosure$fluency == "high"])),
+           OR = f2(s4_rec_or_disclosure$estimate),
+           CI = ci_txt(s4_rec_or_disclosure$lower, s4_rec_or_disclosure$upper),
+           p = p_tbl(s4_rec_or_disclosure$p)) |>
+  kbl(col.names = c("Condition", "Answers", "Participants", "Low", "High", "Odds ratio", "95% CI", "p"),
+      caption = "Table F2, Panel C: Preregistered factual-recovery model, Study 4", align = "lccccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 3, "% correct" = 2, "Fluency effect" = 3)) |>
+  column_spec(1:8, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Mixed logistic regression of a correct answer on visual fluency and substantive quality (effect coding) with random intercepts for participants and startups (`r lme4::ngrps(s4_m_rec_disclosure)[["venture"]]` startups), based on the answers to all valid decks. Low and High are the observed percentages of correct answers after low- and high-fluency decks. The odds ratio (high vs. low fluency) is exp(2 × coefficient), with a 95% Wald confidence interval and a two-sided test.
+:::
+
+
+## Manipulation checks {#sec-study-4-mc}
+
+The preregistered manipulation checks used the control condition only: mixed-effects models of processing ease (0–100) by visual fluency and of perceived venture quality (1–7) by substantive quality, with random intercepts for participants and startups and two-sided tests. Since the observation-level exclusions concern only the deck-level dependent variables, both models use all decks of all participants in the control condition ([Table F2, Panel D](#s4-table-F2d)).
+
+*Results.* High-fluency decks were easier to process (Δ = `r f2(s4_mc_ease_fluency$estimate)` on the 0–100 scale, 95% CI `r ci_txt(s4_mc_ease_fluency$lower, s4_mc_ease_fluency$upper)`, `r p_txt(s4_mc_ease_fluency$p)`), and higher substantive quality increased perceived venture quality (Δ = `r f2(s4_mc_quality_quality$estimate)` on the seven-point scale, 95% CI `r ci_txt(s4_mc_quality_quality$lower, s4_mc_quality_quality$upper)`, `r p_txt(s4_mc_quality_quality$p)`).
+
+::: {#s4-table-F2d}
+```{r}
+#| label: study-4-table-F2d
+
+bind_rows(s4_mc_ease_fluency, s4_mc_quality_quality) |>
+  mutate(Check = c("Processing ease by visual fluency", "Perceived venture quality by substantive quality"),
+         N = lme4::ngrps(s4_m_ease_fluency)[["ID"]],
+         Low = f2(c(mean(s4_long_control$ease[s4_long_control$fluency == "low"]),
+                    mean(s4_long_control$rating_all[s4_long_control$quality == "low"]))),
+         High = f2(c(mean(s4_long_control$ease[s4_long_control$fluency == "high"]),
+                     mean(s4_long_control$rating_all[s4_long_control$quality == "high"]))),
+         Difference = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Check, N, Low, High, Difference, CI, p) |>
+  kbl(col.names = c("Check", "N", "Low", "High", "Difference", "95% CI", "p"),
+      caption = "Table F2, Panel D: Preregistered manipulation checks (control condition), Study 4", align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 6, 7), extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Each model includes random intercepts for participants and startups (`r nobs(s4_m_ease_fluency)` ratings of `r lme4::ngrps(s4_m_ease_fluency)[["ID"]]` participants). Low and High are the observed means. Differences are model-based (high minus low), with two-sided tests and 95% confidence intervals (Satterthwaite's degrees of freedom).
+:::
+
+
+## Preregistered exploratory analyses {#sec-study-4-exploratory}
+
+The preregistration listed the following analyses as exploratory, without directional predictions, so all tests are two-sided. All models are mixed-effects models with random intercepts for participants and startups, the factors are effect-coded, and invalid decks are not included.
+
+### Fluency × quality interactions {#sec-study-4-interactions}
+
+For the ratings and for the allocations, we estimated the fluency × quality interaction in each condition, and the fluency × quality × condition interaction for the two disclosure conditions, which tests whether the added explanation changes the fluency × quality interaction ([Table F3, Panel A](#s4-table-F3a)). With effect coding, four times the coefficient of a two-way interaction is the fluency effect at high quality minus the fluency effect at low quality, and eight times the coefficient of the three-way interaction is this difference in the disclosure condition minus that in the disclosure plus explanation condition. The models for the allocations have a singular fit, because the allocations of every participant add up to 100 and the participant intercepts thus have a variance of zero. The fixed effects are not affected by this.
+
+*Results.* None of the fluency × quality interactions was significant, neither for the ratings (smallest `r p_txt(min(s4_int_rating$p[1:3]))`) nor for the allocations (smallest `r p_txt(min(s4_int_alloc$p[1:3]))`), and the interaction did not differ between the two disclosure conditions (ratings `r p_txt(s4_int_rating$p[4])`, allocations `r p_txt(s4_int_alloc$p[4])`). Thus, there is no evidence that visual fluency changed how strongly the ratings or the allocations responded to substantive quality, with or without the explanation.
+
+::: {#s4-table-F3a}
+```{r}
+#| label: study-4-table-F3a
+
+bind_rows(s4_int_rating, s4_int_alloc) |>
+  mutate(Condition = rep(c("Control", "Disclosure", "Disclosure + explanation", "Disclosure − explanation"), 2),
+         Observations = scales::comma(c(nobs(s4_m_int_rating_control), nobs(s4_m_int_rating_disclosure),
+                                        nobs(s4_m_int_rating_explanation), nobs(s4_m_int_rating_act),
+                                        nobs(s4_m_int_alloc_control), nobs(s4_m_int_alloc_disclosure),
+                                        nobs(s4_m_int_alloc_explanation), nobs(s4_m_int_alloc_act))),
+         Participants = c(lme4::ngrps(s4_m_int_rating_control)[["ID"]], lme4::ngrps(s4_m_int_rating_disclosure)[["ID"]],
+                          lme4::ngrps(s4_m_int_rating_explanation)[["ID"]], lme4::ngrps(s4_m_int_rating_act)[["ID"]],
+                          lme4::ngrps(s4_m_int_alloc_control)[["ID"]], lme4::ngrps(s4_m_int_alloc_disclosure)[["ID"]],
+                          lme4::ngrps(s4_m_int_alloc_explanation)[["ID"]], lme4::ngrps(s4_m_int_alloc_act)[["ID"]]),
+         Difference = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Condition, Observations, Participants, Difference, CI, p) |>
+  kbl(col.names = c("Condition", "Observations", "Participants", "Difference", "95% CI", "p"),
+      caption = "Table F3, Panel A: Fluency × quality interactions, Study 4", align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Perceived venture quality (1–7)" = 4, "Investment allocation (units)" = 4),
+            label_row_css = "text-align: center;") |>
+  column_spec(c(1, 5), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(c(3, 7), extra_css = "border-bottom: 1px solid") |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Difference = fluency effect at high quality minus fluency effect at low quality (four times the interaction coefficient). For Disclosure − explanation, this difference in the disclosure condition minus that in the disclosure plus explanation condition (eight times the coefficient of the three-way interaction). Two-sided tests and 95% confidence intervals with Satterthwaite's degrees of freedom.
+:::
+
+### Factual recovery in the other conditions {#sec-study-4-recovery-exploratory}
+
+The preregistration specified the factual-recovery models in the control and in the disclosure plus explanation condition as exploratory. They have the same specification as the preregistered model ([Table F3, Panel B](#s4-table-F3b)). The model for the control condition has a singular fit (the estimated startup variance is zero).
+
+*Results.* Visual fluency did not significantly affect factual recovery in the control condition (odds ratio = `r f2(s4_rec_or_control$estimate)`, 95% CI `r ci_txt(s4_rec_or_control$lower, s4_rec_or_control$upper)`, `r p_txt(s4_rec_or_control$p)`) or in the disclosure plus explanation condition (odds ratio = `r f2(s4_rec_or_explanation$estimate)`, 95% CI `r ci_txt(s4_rec_or_explanation$lower, s4_rec_or_explanation$upper)`, `r p_txt(s4_rec_or_explanation$p)`).
+
+::: {#s4-table-F3b}
+```{r}
+#| label: study-4-table-F3b
+
+bind_rows(s4_rec_or_control, s4_rec_or_explanation) |>
+  mutate(Condition = c("Control", "Disclosure + explanation"),
+         Answers = scales::comma(c(nobs(s4_m_rec_control), nobs(s4_m_rec_explanation))),
+         Participants = c(lme4::ngrps(s4_m_rec_control)[["ID"]], lme4::ngrps(s4_m_rec_explanation)[["ID"]]),
+         Low = sprintf('%.2f', 100 * c(mean(s4_rec_control$recovery_correct[s4_rec_control$fluency == "low"]),
+                                       mean(s4_rec_explanation$recovery_correct[s4_rec_explanation$fluency == "low"]))),
+         High = sprintf('%.2f', 100 * c(mean(s4_rec_control$recovery_correct[s4_rec_control$fluency == "high"]),
+                                        mean(s4_rec_explanation$recovery_correct[s4_rec_explanation$fluency == "high"]))),
+         OR = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Condition, Answers, Participants, Low, High, OR, CI, p) |>
+  kbl(col.names = c("Condition", "Answers", "Participants", "Low", "High", "Odds ratio", "95% CI", "p"),
+      caption = "Table F3, Panel B: Exploratory factual-recovery models, Study 4", align = "lccccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 3, "% correct" = 2, "Fluency effect" = 3)) |>
+  column_spec(1:8, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Same model and notation as in [Table F2, Panel C](#s4-table-F2c).
+:::
+
+### Order and position effects {#sec-study-4-order}
+
+First, we tested whether the rating of a deck depends on the position in which the deck was viewed (1–4) or on the position of its rating page (1–4), controlling for visual fluency and substantive quality (all conditions, positions as factors, type III tests with Satterthwaite's degrees of freedom; [Table F3, Panel C](#s4-table-F3c)). Second, we tested whether the fluency effect on the ratings differs between the decks viewed before and after the reminder (per condition, since the reminder differed between the conditions) and between the two rotation sequences (high quality decks first vs. low quality decks first; all conditions; [Table F3, Panel D](#s4-table-F3d)).
+
+*Results.* Neither the viewing position (`r p_txt(s4_position[["Pr(>F)"]][1])`) nor the position of the rating page (`r p_txt(s4_position[["Pr(>F)"]][2])`) affected the ratings significantly. The fluency effect did not differ significantly between the two halves in any condition (smallest `r p_txt(min(s4_order$p[1:3]))`) or between the two rotation sequences (`r p_txt(s4_order$p[4])`).
+
+::: {#s4-table-F3c}
+```{r}
+#| label: study-4-table-F3c
+
+data.frame(Effect = c("Viewing position of the deck (1–4)", "Position of the rating page (1–4)"),
+           df1 = s4_position$NumDF, df2 = sprintf('%.1f', s4_position$DenDF),
+           F = f2(s4_position$`F value`), p = p_tbl(s4_position$`Pr(>F)`)) |>
+  kbl(col.names = c("Effect", "df<sub>1</sub>", "df<sub>2</sub>", "F", "p"),
+      caption = "Table F3, Panel C: Position effects on the ratings, Study 4", align = "lcccc", escape = FALSE) |>
+  kable_styling()
+```
+:::
+
+::: {#s4-table-F3d}
+```{r}
+#| label: study-4-table-F3d
+
+s4_order |>
+  mutate(Condition = c("Control", "Disclosure", "Disclosure + explanation", "All conditions"),
+         Observations = scales::comma(c(nobs(s4_m_half_control), nobs(s4_m_half_disclosure),
+                                        nobs(s4_m_half_explanation), nobs(s4_m_sequence))),
+         Participants = c(lme4::ngrps(s4_m_half_control)[["ID"]], lme4::ngrps(s4_m_half_disclosure)[["ID"]],
+                          lme4::ngrps(s4_m_half_explanation)[["ID"]], lme4::ngrps(s4_m_sequence)[["ID"]]),
+         Difference = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Condition, Observations, Participants, Difference, CI, p) |>
+  kbl(col.names = c("Condition", "Observations", "Participants", "Difference", "95% CI", "p"),
+      caption = "Table F3, Panel D: Fluency effect on the ratings by half and by rotation sequence, Study 4",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("First half − second half" = 3, "High quality decks first − low quality decks first" = 1),
+            label_row_css = "text-align: center;") |>
+  column_spec(c(1, 5), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  repeat_header()
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Panel C: models with visual fluency, substantive quality, and both positions as predictors (`r scales::comma(nobs(s4_m_position))` ratings of `r lme4::ngrps(s4_m_position)[["ID"]]` participants). Panel D: Difference = fluency effect in the first half minus that in the second half (or with the high quality decks first minus with the low quality decks first), that is, four times the interaction coefficient, from models that also include substantive quality. Two-sided tests and 95% confidence intervals with Satterthwaite's degrees of freedom.
+:::
+
+
+## Sensitivity analyses {#sec-study-4-sensitivity}
+
+The preregistration specified two separate sensitivity analyses of Hypothesis 4, which repeat the analysis of the disclosure condition (a) without the participants who needed all three instruction attempts, including those who failed all three, and (b) without the participants who answered "Maybe a little" or "Yes" to the question whether they had formed a guess about what we were testing that might have changed their answers. Each restriction was applied to all conditions, so that the comparison with the control condition in the decision rule uses the same restricted sample. Restriction (a) removed `r nrow(s4_valid) - nrow(s4_sens_1)` participants from the analyzable sample (control `r sum(s4_valid$condition == "control") - sum(s4_sens_1$condition == "control")`, disclosure `r sum(s4_valid$condition == "disclosure") - sum(s4_sens_1$condition == "disclosure")`, disclosure plus explanation `r sum(s4_valid$condition == "disclosure_explanation") - sum(s4_sens_1$condition == "disclosure_explanation")`), and restriction (b) removed `r nrow(s4_valid) - nrow(s4_sens_2)` (control `r sum(s4_valid$condition == "control") - sum(s4_sens_2$condition == "control")`, disclosure `r sum(s4_valid$condition == "disclosure") - sum(s4_sens_2$condition == "disclosure")`, disclosure plus explanation `r sum(s4_valid$condition == "disclosure_explanation") - sum(s4_sens_2$condition == "disclosure_explanation")`). [Table F3, Panel E](#s4-table-F3e) shows the results next to those of the analyzable sample.
+
+*Results.* Neither restriction changed the conclusion. The fluency contrast in the disclosure condition was `r f2(s4_h4_sens_1$estimate)` (95% CI `r ci_txt(s4_h4_sens_1$lower, s4_h4_sens_1$upper)`, BF<sub>10</sub> = `r bf_fmt(s4_h4_sens_1$bf10)`) without the participants who needed three attempts and `r f2(s4_h4_sens_2$estimate)` (95% CI `r ci_txt(s4_h4_sens_2$lower, s4_h4_sens_2$upper)`, BF<sub>10</sub> = `r bf_fmt(s4_h4_sens_2$bf10)`) without those who reported a possible hypothesis guess. In both analyses, the 90% confidence interval lay above the upper equivalence bound. The decision rule yielded case `r s4_h4_sens_1$case` in restriction (a) and case `r s4_h4_sens_2$case` in restriction (b).
+
+::: {#s4-table-F3e}
+```{r}
+#| label: study-4-table-F3e
+
+data.frame(
+  Statistic = c("N (disclosure)", "Excluded (disclosure)", "N (control)", "Estimate", "95% CI", "p (two-sided)",
+                "BF<sub>10</sub>", "90% CI", "p (TOST)", "Equivalence", "p (Control − disclosure)", "Decision rule"),
+  Full = c(s4_h4$N, 0, sum(s4_valid$condition == "control"), f2(s4_h4$estimate),
+           ci_txt(s4_h4$lower, s4_h4$upper), p_tbl(s4_h4$p), bf_fmt(s4_h4$bf10),
+           ci_txt(s4_h4$lower_90, s4_h4$upper_90), p_tbl(s4_h4$p_tost),
+           ifelse(s4_h4$p_tost < .05, "yes", "no"), p_tbl(s4_h4$p_control), paste("Case", s4_h4$case)),
+  Attempts = c(s4_h4_sens_1$N, s4_h4$N - s4_h4_sens_1$N, sum(s4_sens_1$condition == "control"), f2(s4_h4_sens_1$estimate),
+               ci_txt(s4_h4_sens_1$lower, s4_h4_sens_1$upper), p_tbl(s4_h4_sens_1$p), bf_fmt(s4_h4_sens_1$bf10),
+               ci_txt(s4_h4_sens_1$lower_90, s4_h4_sens_1$upper_90), p_tbl(s4_h4_sens_1$p_tost),
+               ifelse(s4_h4_sens_1$p_tost < .05, "yes", "no"), p_tbl(s4_h4_sens_1$p_control), paste("Case", s4_h4_sens_1$case)),
+  Guess = c(s4_h4_sens_2$N, s4_h4$N - s4_h4_sens_2$N, sum(s4_sens_2$condition == "control"), f2(s4_h4_sens_2$estimate),
+            ci_txt(s4_h4_sens_2$lower, s4_h4_sens_2$upper), p_tbl(s4_h4_sens_2$p), bf_fmt(s4_h4_sens_2$bf10),
+            ci_txt(s4_h4_sens_2$lower_90, s4_h4_sens_2$upper_90), p_tbl(s4_h4_sens_2$p_tost),
+            ifelse(s4_h4_sens_2$p_tost < .05, "yes", "no"), p_tbl(s4_h4_sens_2$p_control), paste("Case", s4_h4_sens_2$case))
+) |>
+  kbl(col.names = c("", "Analyzable sample", "(a) Instruction attempts", "(b) Hypothesis guess"),
+      caption = "Table F3, Panel E: Preregistered sensitivity analyses of Hypothesis 4 (disclosure condition), Study 4",
+      align = "lccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:4, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Fluency contrast on the ratings in the disclosure condition (rating points). (a) Without participants who needed all three instruction attempts, including those who failed all three. (b) Without participants who answered "Maybe a little" or "Yes" to the hypothesis-guess item. Excluded = participants of the disclosure condition removed from the analyzable sample. The Bayes factor is against the point null of zero (Cauchy prior, r = 0.707). Equivalence requires the 90% confidence interval to lie within ±`r s4_bound` (p (TOST) < .05). The comparison with the control condition is a two-sided Welch *t*-test. Decision rule: case of the preregistered decision rule, numbered as in [Preregistered contrasts](#sec-study-4-contrasts).
+:::
+
+
+## Belief responses in the disclosure condition {#sec-study-4-belief-responses}
+
+**Note: The following analysis was not preregistered.** In the disclosure condition (analyzable sample), we split the participants by their answer to belief item 1 into those who answered "nothing at all" (1) and those who gave a higher answer, and we computed the fluency contrasts on the ratings and on the allocations in each group, with two-sided 95% confidence intervals. The beliefs were measured after the decks and the allocation, so these groups are post-treatment groups and do not identify the causal effect of accepting the disclosure or a psychological mechanism.
+
+*Results.* In the disclosure condition, `r s4_nothing_rating$N` of `r nrow(s4_disclosure)` participants (`r sprintf('%.1f', 100 * s4_nothing_rating$N / nrow(s4_disclosure))`%) answered "nothing at all". Among them, high-fluency decks received quality ratings that were `r f2(s4_nothing_rating$estimate)` points higher (95% CI `r ci_txt(s4_nothing_rating$lower, s4_nothing_rating$upper)`) and `r f2(s4_nothing_alloc$estimate)` more units of investment capital (95% CI `r ci_txt(s4_nothing_alloc$lower, s4_nothing_alloc$upper)`). Among the other `r s4_other_rating$N` participants of this condition, the fluency contrasts were `r f2(s4_other_rating$estimate)` rating points (95% CI `r ci_txt(s4_other_rating$lower, s4_other_rating$upper)`) and `r f2(s4_other_alloc$estimate)` units (95% CI `r ci_txt(s4_other_alloc$lower, s4_other_alloc$upper)`).

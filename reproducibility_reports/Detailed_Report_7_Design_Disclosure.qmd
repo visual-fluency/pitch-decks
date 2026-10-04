@@ -1,0 +1,2518 @@
+---
+title: "Study 4: Design Disclosure and an Explanation of Processing Ease"
+subtitle: "Detailed Reproducibility Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    page-layout: full
+    code-fold: true
+    code-tools:
+      source: true
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+execute:
+  warning: false
+  message: false
+---
+
+<!--
+# Last update: 2026-09-28
+# Author: <blinded for review>
+-->
+
+# Introduction {#sec-intro}
+
+For the same eight fictitious startups as in Study 3 (**Servora**, **Curato**, **Ironhall**, **Foliant**, **Pulsegrid**, **Paperloom**, **Sentyl**, and **Axonmesh**), we ran an online experiment in which we varied what participants were told about the visual design of the pitch decks. Participants were randomly assigned to one of three instruction conditions (control, disclosure, and disclosure plus explanation) in a 1:5:2 ratio. Before reviewing the pitch decks, they read one of the following messages:
+
+- **Control**: *"You will review four startup pitch decks and at the end distribute 100 units of investment capital across them. Please review each pitch deck and judge the venture from the venture information presented."*
+- **Disclosure**: *"You will review four startup pitch decks and at the end distribute 100 units of investment capital across them. The visual design of the decks was created by a design agency for this study. The founders did not create or choose it. The design tells you nothing about the ventures or their founders. Please review each pitch deck and judge each venture from the venture information presented."*
+- **Disclosure plus explanation**: the disclosure message with two additional sentences before its final sentence: *"You will review four startup pitch decks and at the end distribute 100 units of investment capital across them. The visual design of the decks was created by a design agency for this study. The founders did not create or choose it. The design tells you nothing about the ventures or their founders. Visual design can make the same information feel easier or harder to process. That feeling is not evidence about the venture. Please review each pitch deck and judge each venture from the venture information presented."*
+
+After the message, participants answered two comprehension questions about it (in the control condition, about the logistics of the study). A wrong answer led to a notice and a repeated presentation of the message (up to three attempts). After the second pitch deck, participants saw a short reminder of their message.
+
+The experiment was incentive-compatible: at the end, participants distributed 100 units of investment capital across the four startups they had reviewed, one startup was drawn with a probability proportional to its allocation, and the participant received a bonus of up to £1.00 that was proportional to the substantive quality of this startup (its q-score, as rated by an independent panel of seven large language models, cf. the [LLM Ratings Reproducibility Report](Detailed_Report_2_LLM_Ratings.qmd)). Since the high and the low fluency version of a pitch deck had the same q-score, the bonus rewarded substantive quality only. The q-scores and the individual ratings of the language models are available in the [online repository](https://researchbox.org/1836&PEER_REVIEW_passcode=NKVZFU). Participants who answered the comprehension question about the bonus incorrectly twice were screened out during the study and compensated for their time.
+
+Each participant reviewed four of the eight startups, one pitch deck for each combination of visual fluency (low vs. high) and substantive quality (low vs. high), resulting in a 3 (instruction condition; between-subjects) x 2 (visual fluency; within-subjects) x 2 (substantive quality; within-subjects) design. Sixteen rotation patterns counterbalanced which startups a participant saw and in which version. Before and after the reminder, participants saw one high and one low fluency pitch deck each, in random order. There was no time limit. After each pitch deck, participants answered a factual question about the startup (factual recovery). After the investment allocation, they answered questions about the study's purpose and indicated how much the visual design had told them about the startups' quality and the founders' competence (beliefs). Finally, participants saw each pitch deck again and rated it with respect to how easy it had been to study (processing ease; called *felt ease* in the preregistration) and the startup's potential irrespective of the pitch deck's visual design (perceived venture quality, the main dependent variable). @fig-procedure summarizes the procedure.
+
+We ran the experiment on [Qualtrics](https://www.qualtrics.com), where the pitch decks were displayed as slide images in a click-through viewer, and recruited the participants via [Prolific](https://www.prolific.co). For details, see the corresponding [AsPredicted](https://aspredicted.org) preregistration listed in @tbl-prereg.
+
+|Startup                | Preregistration Date | AsPredicted #                                | Data Collection Start |
+|:----------------------|:-----------:|:--------------------------------------------:|:---------------------:|
+|All eight startups     | 02-09-2026  | [309446](https://aspredicted.org/ud65mi.pdf) | 03-09-2026            |
+: Overview Preregistration {#tbl-prereg}
+
+In what follows, we will give an overview of the results, sensitivity analyses, and exploratory analyses, followed by figures that summarize the results of the experiment.
+As this report is dynamically created with R and Quarto, we also report all code.
+However, for readability, code is hidden by default and only the relevant results are shown.
+
+
+```{r}
+#| label: fig-procedure
+#| fig-cap: Procedure of the experiment and preregistered analyses
+#| fig-width: 10
+#| fig-asp: 0.66
+#| out-width: 100%
+#| warning: false
+#| message: false
+
+options(knitr.kable.NA = '')
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggsignif)
+library(ggtext)
+library(patchwork)
+library(kableExtra)
+options(knitr.kable.NA = '',
+        kable_styling_bootstrap_options = c("striped", "condensed", "responsive"))
+
+# further packages that are loaded on demand are:
+# - readr
+# - tidyr
+# - stringr
+# - forcats
+# - weights
+# - BayesFactor
+# - lme4
+# - lmerTest
+# - scales
+# - hrbrthemes
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+
+# preregistered equivalence bound for H2 (in rating points)
+eq_bound <- 0.225
+
+
+# Custom functions
+#
+# negate %in%
+`%notin%` <- Negate(`%in%`)
+#
+# position of each block in a Qualtrics "Display Order" string
+# -Note: the input are the *_DO columns, so the string might look like
+#        "FeltEaseSlot3|FeltEaseSlot1|FeltEaseSlot4|FeltEaseSlot2"
+display_position <- function(x, labels) {
+  parts <- stringr::str_split(x, stringr::fixed("|"))
+  out <- vapply(
+    parts,
+    function(p) {
+      if (length(p) != length(labels) | anyNA(p) | anyDuplicated(p) > 0) {
+        return(rep(NA, length(labels)))
+      }
+      match(labels, p)
+    },
+    integer(length(labels))
+  )
+  out <- as.data.frame(t(out))
+  names(out) <- labels
+  out
+}
+#
+# total time spent viewing a deck (in seconds)
+# -Note: the raw string holds the 14 per-slide viewing times in deciseconds
+#        (i.e., tenths of a second), separated by "|"
+viewtime_sec <- function(x){
+  vapply(stringr::str_split(x, stringr::fixed("|")),
+         function(p) sum(as.numeric(p)) / 10, numeric(1))
+}
+#
+# number of slides viewed (i.e., the leading number of the coverage string,
+# e.g., "7/14" -> 7)
+slides_seen <- function(x){
+  as.numeric(stringr::str_extract(x, "^\\d+"))
+}
+#
+# all 14 slide images of a deck loaded without failure (i.e., "14/14;fail=0")
+images_ok <- function(x){
+  stringr::str_extract(x, "^\\d+") %in% as.character(14) &
+    stringr::str_extract(x, "(?<=fail=)\\d+") %in% "0"
+}
+#
+# extract the results of a one-sample t-test of a participant-level contrast
+# against zero and Cohen's d_z and put the results together as a table
+# -Note: NAs (i.e., participants with at least one invalid deck) are removed
+#        before the test. The 95% confidence interval is always two-sided.
+contrast_tbl <- function(x, alternative = "two.sided", ...){
+  # remove missing values
+  x <- x[!is.na(x)]
+  # perform t-test
+  tres <- t.test(x, mu = 0, alternative = alternative)
+  # perform two-sided t-test to get the (two-sided) 95% confidence interval
+  cres <- t.test(x, mu = 0, alternative = "two.sided")
+  # construct p-value
+  pval <- ifelse(tres$p.value < .001, " &lt; .001", weights::rd(tres$p.value, 3))
+  # construct return df
+  df <- data.frame(N = length(x), Mean = NA, SD = NA, CI = NA, test_statistic = NA, p = NA, d = NA)
+  # fill values
+  df$Mean <- weights::rd(mean(x), 2)
+  df$SD <- weights::rd(sd(x), 3)
+  df$CI <- paste0("[", weights::rd(cres$conf.int[1], 2), ", ", weights::rd(cres$conf.int[2], 2), "]")
+  df$test_statistic <- paste0("t(", tres$parameter, ") = ", sprintf('%.2f', tres$statistic))
+  df$p <- pval
+  df$d <- weights::rd(mean(x) / sd(x), 2)
+  return(df)
+}
+#
+# format a Bayes factor (values above 1,000 in scientific notation,
+# e.g., 4.37 × 10^7)
+bf_fmt <- function(bf){
+  ifelse(bf > 1000,
+         paste0(sprintf('%.2f', bf / 10^floor(log10(bf))), " × 10<sup>", floor(log10(bf)), "</sup>"),
+         sprintf('%.2f', bf))
+}
+#
+# verbal interpretation of a Bayes factor BF10 (classification of Lee &
+# Wagenmakers, 2013, adapted from Jeffreys, 1961) and a table note that
+# explains it
+bf_label <- function(bf){
+  dplyr::case_when(bf > 100 ~ "extreme evidence for the alternative hypothesis",
+                   bf > 30 ~ "very strong evidence for the alternative hypothesis",
+                   bf > 10 ~ "strong evidence for the alternative hypothesis",
+                   bf > 3 ~ "moderate evidence for the alternative hypothesis",
+                   bf > 1 ~ "anecdotal evidence for the alternative hypothesis",
+                   bf == 1 ~ "no evidence for either hypothesis",
+                   bf > 1/3 ~ "anecdotal evidence for the null hypothesis",
+                   bf > 1/10 ~ "moderate evidence for the null hypothesis",
+                   bf > 1/30 ~ "strong evidence for the null hypothesis",
+                   bf > 1/100 ~ "very strong evidence for the null hypothesis",
+                   TRUE ~ "extreme evidence for the null hypothesis")
+}
+bf_note <- function(bf, alternative){
+  paste0("BF<sub>10</sub> = ", bf_fmt(bf), " indicates ", bf_label(bf),
+         " (classification of Lee & Wagenmakers, 2013). That is, the data are ",
+         ifelse(bf >= 1, scales::comma(signif(bf, 3)), scales::comma(signif(1 / bf, 3))),
+         " times more likely under ", ifelse(bf >= 1, paste0("the alternative hypothesis (", alternative, ")"),
+                                             "the null hypothesis (no effect)"),
+         " than under ", ifelse(bf >= 1, "the null hypothesis (no effect).",
+                                paste0("the alternative hypothesis (", alternative, ").")))
+}
+#
+# extract the results of a Welch two-sample t-test and Cohen's d and put the
+# results together as a table
+# -Note: Cohen's d uses the average of the two variances as the standardizer
+#        (since the Welch test does not assume equal variances)
+welch_tbl <- function(x, y, alternative = "two.sided", ...){
+  # remove missing values
+  x <- x[!is.na(x)]
+  y <- y[!is.na(y)]
+  # perform Welch t-test
+  tres <- t.test(x, y, alternative = alternative, var.equal = FALSE)
+  # construct p-value
+  pval <- ifelse(tres$p.value < .001, " &lt; .001", weights::rd(tres$p.value, 3))
+  # construct return df
+  df <- data.frame(N_1 = length(x), N_2 = length(y), Mean_1 = NA, Mean_2 = NA,
+                   test_statistic = NA, p = NA, d = NA)
+  # fill values
+  df$Mean_1 <- weights::rd(mean(x), 2)
+  df$Mean_2 <- weights::rd(mean(y), 2)
+  df$test_statistic <- paste0("t(", weights::rd(tres$parameter, 1), ") = ", sprintf('%.2f', tres$statistic))
+  df$p <- pval
+  df$d <- weights::rd((mean(x) - mean(y)) / sqrt((var(x) + var(y)) / 2), 2)
+  return(df)
+}
+#
+# extract the results of an equivalence test (two one-sided tests, TOST) of a
+# participant-level contrast against the bounds -bound and +bound and put the
+# results together as a table
+# -Note: equivalence is concluded if both one-sided tests are significant at
+#        alpha = .05, which is the same as the 90% CI lying inside the bounds
+tost_tbl <- function(x, bound = eq_bound, ...){
+  # remove missing values
+  x <- x[!is.na(x)]
+  # perform the two one-sided tests
+  res_lower <- t.test(x, mu = -bound, alternative = "greater")
+  res_upper <- t.test(x, mu = bound, alternative = "less")
+  # construct p-values
+  p_lower <- ifelse(res_lower$p.value < .001, " &lt; .001", weights::rd(res_lower$p.value, 3))
+  p_upper <- ifelse(res_upper$p.value < .001, " &lt; .001", weights::rd(res_upper$p.value, 3))
+  # construct return df
+  df <- data.frame(test = c(paste0("Lower bound: mean > -", bound), paste0("Upper bound: mean < +", bound)),
+                   test_statistic = c(paste0("t(", res_lower$parameter, ") = ", sprintf('%.2f', res_lower$statistic)),
+                                      paste0("t(", res_upper$parameter, ") = ", sprintf('%.2f', res_upper$statistic))),
+                   p = c(p_lower, p_upper))
+  return(df)
+}
+#
+# preregistered decision rule for H2 (steps applied in the preregistered order)
+# -Note: x = fluency contrast in the disclosure condition,
+#        x_control = fluency contrast in the control condition
+h2_decision <- function(x, x_control, bound = eq_bound){
+  # remove missing values
+  x <- x[!is.na(x)]
+  x_control <- x_control[!is.na(x_control)]
+  # estimate and two-sided test against zero
+  est <- mean(x)
+  p_zero <- t.test(x, mu = 0, alternative = "two.sided")$p.value
+  sig_negative <- p_zero < .05 & est < 0
+  sig_positive <- p_zero < .05 & est > 0
+  # equivalence test (TOST)
+  p_lower <- t.test(x, mu = -bound, alternative = "greater")$p.value
+  p_upper <- t.test(x, mu = bound, alternative = "less")$p.value
+  equivalence <- p_lower < .05 & p_upper < .05
+  # control vs. disclosure (Welch t-test, two-sided): control effect higher?
+  p_comparison <- t.test(x_control, x, var.equal = FALSE)$p.value
+  control_higher <- p_comparison < .05 & mean(x_control) > est
+  # decision rule
+  if (sig_negative & est <= -bound) {
+    return("(1) significantly negative with the estimate at or beyond the bound: overcorrection")
+  }
+  if (sig_positive & est >= bound) {
+    return("(2) significantly positive with the estimate at least 0.225: persistence supported")
+  }
+  if (equivalence & control_higher) {
+    if (sig_positive) return("(3) switched off (a significantly positive effect remains inside the bound)")
+    if (sig_negative) return("(3) switched off (a significantly negative effect remains inside the bound)")
+    return("(3) switched off")
+  }
+  if (sig_positive & est < bound & !equivalence) {
+    return("(4) significantly positive below 0.225 without passing equivalence: reduced but present")
+  }
+  return("(5) indeterminate")
+}
+#
+# step number and outcome of the decision rule for H2, taken from the text that
+# `h2_decision` returns (e.g., "(2) significantly positive ...: H2 supported"
+# -> step 2, outcome "prediction supported")
+h2_step <- function(decision){
+  as.integer(stringr::str_extract(decision, "(?<=^\\()\\d"))
+}
+h2_outcome <- function(decision){
+  outcome <- stringr::str_remove(stringr::str_remove(decision, "^\\(\\d\\) "), "^.*: ")
+  stringr::str_replace(outcome, "H2 ", "prediction ")
+}
+#
+# summarize a manipulation check: observed number of ratings, mean, and SD per
+# condition (high, low) and the test of the manipulated factor in a
+# mixed-effects model (from `lmerTest::lmer`, effect coding, random intercepts
+# for participants and startups) and put the results together as a table
+# -Note: Cohen's d is the model-based difference between the high and the low
+#        condition (i.e., two times the coefficient) divided by the square root
+#        of the sum of all variance components (Westfall et al., 2014).
+#        p-values are based on Satterthwaite's degrees of freedom.
+mc_tbl <- function(model, effect, y, group, outcome){
+  # observed values per condition
+  n <- c(sum(group == "high"), sum(group == "low"))
+  m <- c(mean(y[group == "high"]), mean(y[group == "low"]))
+  sdv <- c(sd(y[group == "high"]), sd(y[group == "low"]))
+  # test of the manipulated factor
+  fe <- coef(summary(model))[effect, ]
+  pval <- ifelse(fe["Pr(>|t|)"] < .001, " &lt; .001", weights::rd(fe["Pr(>|t|)"], 3))
+  # standardized effect size
+  vc <- as.data.frame(lme4::VarCorr(model))
+  d_es <- 2 * fe["Estimate"] / sqrt(sum(vc$vcov))
+  # construct return df
+  return(data.frame(DV = c(outcome, ""), condition = c("high", "low"),
+                    N = scales::comma(n), Mean = weights::rd(m, 2), SD = weights::rd(sdv, 3),
+                    test_statistic = c(paste0("t(", scales::comma(unname(fe["df"]), accuracy = .1), ") = ",
+                                              sprintf('%.2f', fe["t value"])), ""),
+                    p = c(unname(pval), ""), d = c(weights::rd(unname(d_es), 2), ""),
+                    row.names = NULL))
+}
+#
+# summarize factual recovery: observed number of answers and share of correct
+# answers per fluency condition (high, low) and the fluency effect in a mixed
+# logistic regression (from `lme4::glmer`, effect coding) and put the results
+# together as a table
+# -Note: with effect coding, the odds ratio (high vs. low) is exp(2 * coefficient)
+recovery_tbl <- function(model, y, group){
+  # observed values per condition
+  n <- c(sum(group == "high"), sum(group == "low"))
+  share <- c(mean(y[group == "high"]), mean(y[group == "low"]))
+  # fluency effect
+  fe <- coef(summary(model))["fluency1", ]
+  pval <- ifelse(fe["Pr(>|z|)"] < .001, " &lt; .001", weights::rd(fe["Pr(>|z|)"], 3))
+  # construct return df
+  return(data.frame(DV = c("Correct answer", ""), condition = c("high", "low"),
+                    N = scales::comma(n), share = sprintf('%.1f', 100 * share),
+                    test_statistic = c(paste0("z = ", sprintf('%.2f', fe["z value"])), ""),
+                    p = c(unname(pval), ""), or = c(sprintf('%.2f', exp(2 * fe["Estimate"])), ""),
+                    row.names = NULL))
+}
+#
+# extract a single fixed effect (e.g., an interaction) from a mixed-effects
+# model (from `lmerTest::lmer`) and put the results together as a table
+# -Note: with effect coding, the coefficient of a two-way interaction is a
+#        quarter of the corresponding difference of differences, and the
+#        coefficient of a three-way interaction is an eighth of the
+#        corresponding difference. Thus, we also report this difference (i.e.,
+#        `multiplier` times the coefficient) with its 95% confidence interval
+#        (based on Satterthwaite's degrees of freedom), as well as the number of
+#        observations and participants.
+lmer_coef_tbl <- function(model, effect, multiplier = 4, coef_digits = 2, ...){
+  # extract fixed effect
+  fe <- coef(summary(model))[effect, ]
+  # construct p-value
+  pval <- ifelse(fe["Pr(>|t|)"] < .001, " &lt; .001", weights::rd(fe["Pr(>|t|)"], 3))
+  # implied difference and its 95% confidence interval
+  diff <- unname(multiplier * fe["Estimate"])
+  diff_se <- unname(multiplier * fe["Std. Error"])
+  lower <- diff - qt(.975, unname(fe["df"])) * diff_se
+  upper <- diff + qt(.975, unname(fe["df"])) * diff_se
+  # construct return df
+  fmt <- paste0("%.", coef_digits, "f")
+  return(data.frame(estimate = sprintf(fmt, fe["Estimate"]),
+                    std.error = sprintf("%.3f", fe["Std. Error"]),
+                    difference = sprintf(fmt, diff),
+                    ci = paste0("[", sprintf(fmt, lower), ", ", sprintf(fmt, upper), "]"),
+                    test_statistic = paste0("t(", scales::comma(unname(fe["df"]), accuracy = .1), ") = ", sprintf('%.2f', fe["t value"])),
+                    p = unname(pval),
+                    observations = scales::comma(nobs(model)),
+                    participants = scales::comma(unname(lme4::ngrps(model)["ID"])),
+                    row.names = NULL))
+}
+#
+# half a blank line between the paragraphs of the box labels in the procedure figure
+half_gap <- function(label){
+  paste0("<p>", gsub("<br><br>", "</p><p style='font-size:9pt'></p><p>", label, fixed = TRUE), "</p>")
+}
+
+# figure: Procedure of the experiment and preregistered analyses
+#
+# aesthetics
+#
+# define colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+
+# boxes of the procedure (first and second row), their labels, and their colors
+# --Note: we draw the figure on a canvas of 100 x 61.5 units
+# 6 equally-sized boxes per row spanning the full width (0 to 100), keeping the
+# original width-to-gap ratio (14 : 2.6)
+n_boxes <- 6
+gap_ratio <- 2.6 / 14
+box_w <- 100 / (n_boxes + (n_boxes - 1) * gap_ratio)
+box_g <- box_w * gap_ratio
+box_xmin <- (0:(n_boxes - 1)) * (box_w + box_g)
+box_xmax <- box_xmin + box_w
+box_centers <- (box_xmin + box_xmax) / 2
+
+procedure <- data.frame(
+  xmin = c(box_xmin, box_xmin[1:5]),
+  xmax = c(box_xmax, box_xmax[1:5]),
+  ymin = c(rep(32, 6), rep(10, 5)),
+  ymax = c(rep(49, 6), rep(26, 5)),
+  label = half_gap(c("<b>Start</b><br><br>consent,<br>Prolific ID",
+                     "<b>Instruction</b><br><br>message (control,<br>disclosure, or<br>disclosure plus<br>explanation);<br>up to 3 attempts",
+                     "<b>Bonus rules</b><br><br>explanation and<br>comprehension<br>question",
+                     "<b>Decks 1 and 2</b><br><br>random order;<br>factual question<br>after each deck",
+                     "<b>Reminder</b><br><br>short summary of<br>the instruction<br>message",
+                     "<b>Decks 3 and 4</b><br><br>random order;<br>factual question<br>after each deck",
+                     "<b>Allocation</b><br><br>100 units of<br>capital across<br>the 4 decks",
+                     "<b>Questions</b><br><br>study purpose,<br>hypothesis guess",
+                     "<b>Beliefs</b><br><br>what the design<br>told about quality<br>and founders",
+                     "<b>Ratings</b><br><br>all 4 decks again:<br>processing ease<br>(0–100) and<br>quality (1–7)",
+                     "<b>End</b><br><br>attention check,<br>demographics")),
+  fill = c("gray90", blue_main, "gray90", blue_dark, blue_main, blue_dark,
+           blue_dark, "gray90", "gray90", blue_dark, "gray90"),
+  color = c("black", "white", "black", "white", "white", "white",
+            "white", "black", "black", "white", "black")
+)
+# boxes with the preregistered analyses of the measures (white boxes): factual
+# recovery (second row, below the decks), allocation, beliefs, and ratings
+# (third row)
+contrasts_boxes <- data.frame(
+  xmin = c(box_xmin[6], box_xmin[1], box_xmin[3], box_xmin[4]),
+  xmax = c(box_xmax[6], box_xmax[1], box_xmax[3], box_xmax[6]),
+  ymin = c(10, -11, -11, -11),
+  ymax = c(26, 5, 5, 5),
+  label = half_gap(c("<b>Factual<br>recovery</b><br><br>mixed logistic<br>regression<br>(fluency effect)",
+                     "<b>Fluency contrast<br>(allocation)</b><br><br>control > 0<br>disclosure<br>(two-sided)",
+                     "<b>Belief check</b><br><br>disclosure < control",
+                     "<b>Fluency contrast (perceived venture quality ratings)</b><br><br>control > 0; disclosure: remains > 0 (decision rule incl. equivalence<br>test, &plusmn;0.225); disclosure plus explanation < disclosure<br><br><b>Manipulation checks</b> (control condition): mixed-effects models"))
+)
+# arrows between the boxes
+arrows_h <- data.frame(x = c(procedure$xmax[1:5], procedure$xmax[7:10]) + .4,
+                       xend = c(procedure$xmin[2:6], procedure$xmin[8:11]) - .4,
+                       y = c(rep(40.5, 5), rep(18, 4)), yend = c(rep(40.5, 5), rep(18, 4)))
+# connector from the first to the second row
+connector <- data.frame(x = c(box_xmin[6] + box_w / 4, box_xmin[6] + box_w / 4, box_centers[1], box_centers[1]),
+                        y = c(31.6, 29, 29, 26.4))
+# arrows from the measures to their analyses
+arrows_v <- data.frame(x = c(box_xmax[6] - box_w / 4, box_centers[c(1, 3, 4)]),
+                       xend = c(box_xmax[6] - box_w / 4, box_centers[c(1, 3, 4)]),
+                       y = c(31.6, 9.6, 9.6, 9.6), yend = c(26.4, 5.4, 5.4, 5.4))
+
+# plot
+ggplot() +
+  geom_rect(data = procedure, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            fill = procedure$fill, color = NA) +
+  geom_richtext(data = procedure, aes(x = xmin + 1.3, y = ymax - 1.7, label = label),
+                color = procedure$color, fill = NA, label.color = NA, size = 3.6,
+                family = "Roboto Condensed", lineheight = 1.15, hjust = 0, vjust = 1) +
+  geom_rect(data = contrasts_boxes, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            fill = "white", color = blue_dark, linewidth = .5) +
+  geom_richtext(data = contrasts_boxes, aes(x = xmin + 1.3, y = ymax - 1.7, label = label),
+                color = "gray15", fill = NA, label.color = NA, size = 3.6,
+                family = "Roboto Condensed", lineheight = 1.15, hjust = 0, vjust = 1) +
+  geom_segment(data = arrows_h, aes(x = x, xend = xend, y = y, yend = yend),
+               arrow = arrow(length = unit(1.5, "mm"), type = "closed"), color = "gray45") +
+  geom_path(data = connector, aes(x = x, y = y),
+            arrow = arrow(length = unit(1.5, "mm"), type = "closed"), color = "gray45") +
+  geom_segment(data = arrows_v, aes(x = x, xend = xend, y = y, yend = yend),
+               arrow = arrow(length = unit(1.5, "mm"), type = "closed"), color = "gray45") +
+  coord_cartesian(xlim = c(0, 100), ylim = c(-11.5, 50), expand = FALSE) +
+  theme_void() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        plot.margin = margin(t = 10, r = 10, b = 10, l = 10),
+        plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain",
+                                      margin = margin(t = 0, r = 0, b = 4, l = 0)),
+        plot.subtitle = element_text(size = 14, family = "Roboto Condensed",
+                                     margin = margin(t = 0, r = 0, b = 10, l = 0)),
+        plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10,
+                                    margin = margin(t = 8, r = 0, b = 0, l = 0))) +
+  labs(title = "<b>Procedure of the experiment and preregistered analyses</b>",
+       subtitle = "Instruction condition between subjects, fluency and quality within subjects (Study 4)",
+       caption = paste0("<i>Notes:</i><br>", "The four decks crossed visual fluency (high vs. low) with substantive quality (high vs. low).<br>",
+                        "Each half (i.e., before and after the reminder) contained one high and one low fluency deck.<br>",
+                        "Dark boxes: pitch decks and dependent variables; blue boxes: instruction manipulation; gray boxes: other parts of the survey;<br>",
+                        "white boxes: preregistered analyses of the respective measures."))
+```
+
+# Data preparation
+
+The data preparation steps included cleaning and preprocessing the survey data (from Qualtrics), which also contain the pitch deck tracking data (e.g., the viewing time per deck), and the demographic data (from Prolific). Next, the two data sources were merged, the preregistered exclusions were performed, and the final, processed datasets were saved. As preregistered, we excluded not only participants but also individual observations (i.e., a participant's responses to a single deck), namely when the deck was not loaded correctly, when it was viewed for less than 3 seconds or more than 30 minutes, or when it had no quality rating.
+
+Note that in this report, we load the de-identified and anonymized datasets. Please consult the [online repository](https://researchbox.org/1836&PEER_REVIEW_passcode=NKVZFU) for the code that processed the raw data.
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'reproducibility_reports/data'
+
+# -----------------------------------------------------------------------------
+# Study 4: Design Disclosure and an Explanation of Processing Ease
+# AsPredicted Preregistration #309446
+# -----------------------------------------------------------------------------
+#
+# Getting and preparing the datasets
+#
+# Survey data (Qualtrics)
+d_qua <- readr::read_csv(here(data_dir, 'Study_4_Qualtrics.csv'))
+
+# how the conditions are encoded
+#
+# (1) Instruction condition (between participants): a balanced randomizer
+#     assigned each participant to one of eight subgroups (`armchild` 1-8), which
+#     belong to the three conditions in a 1:5:2 ratio (`arm`):
+#       a1 = control (subgroup 1)
+#       a2 = disclosure (subgroups 2-6)
+#       a3 = disclosure plus explanation (subgroups 7-8)
+# (2) Deck cells (within participants): every per-deck variable has a trailing
+#     slot index (1-4). Slots 1 and 2 were shown before the midway reminder,
+#     slots 3 and 4 after it. The rotation pattern (1-16) determines the cell of
+#     each slot:
+#       slot   patterns 1-8 (HQ first)   patterns 9-16 (LQ first)
+#         1          HQ-HF                     LQ-HF
+#         2          HQ-LF                     LQ-LF
+#         3          LQ-HF                     HQ-HF
+#         4          LQ-LF                     HQ-LF
+#     (HQ/LQ = high/low quality, HF/LF = high/low fluency)
+# (3) Display order: the two decks within each half, the four rating pages, and
+#     the four ventures on the allocation page were shown in random order
+#     (Qualtrics display order variables, *_DO)
+
+# lookup tables
+#
+# instruction conditions
+condition_labels <- c(a1 = "control", a2 = "disclosure", a3 = "disclosure_explanation")
+# correct answers of the factual recovery questions: after each deck,
+# participants answered one four-option question about the venture. The
+# question was identical across the two design versions of a deck, but the
+# correct answer depends on the content version (high vs. low quality)
+recovery_correct_hq <- c(
+  Servora   = "Its core patent has been granted, with further claims in prosecution.",
+  Curato    = "Its founders built data infrastructure together at a leading AI-data company and left senior roles to work on Curato full-time.",
+  Ironhall  = "Its module has passed independent industrial certification and already runs on live production lines.",
+  Foliant   = "A bank customer has rolled Foliant out organization-wide after a successful pilot.",
+  Pulsegrid = "Paying customers run it on production models, and it generates annual recurring revenue.",
+  Paperloom = "An independent certification firm has completed an audit of its extraction accuracy and verified a benchmark lead.",
+  Sentyl    = "It has completed a SOC 2 Type II audit, with the report available in its data room.",
+  Axonmesh  = "Live fleets already coordinate robots in production at customer sites, billing recurring revenue."
+)
+recovery_correct_lq <- c(
+  Servora   = "Its patent filing is a provisional application that is still pending.",
+  Curato    = "Its founders are building Curato part-time alongside their current jobs, with the advisory board still forming.",
+  Ironhall  = "Its industrial certification is still in testing, and its first module is installing on a pilot line this quarter.",
+  Foliant   = "Its most advanced customer engagement is a pilot in two practice groups at a law firm.",
+  Pulsegrid = "It is pre-revenue, with an open-beta cohort scheduled to start next month.",
+  Paperloom = "An independent benchmark of its extraction accuracy is in progress but not yet finished.",
+  Sentyl    = "Its SOC 2 Type II audit is scheduled but has not yet taken place.",
+  Axonmesh  = "Its deployment to date is one pilot fleet running daily at a single design partner's warehouse."
+)
+
+# make variable names more coding friendly
+d_qua_clean <- d_qua |>
+  rename(IP_address = IPAddress,
+         duration_study = `Duration (in seconds)`,
+         attention_check_text = attention_check_99_TEXT,
+         viewport_width = scr_w, viewport_height = scr_h,
+         preload_first_half_raw = preload_1, preload_second_half_raw = preload_2,
+         order_view_first_half_raw = FL_110_DO, order_view_second_half_raw = FL_114_DO,
+         order_rating_raw = FL_123_DO, order_allocation_raw = advance_choice_DO) |>
+  # conditions and randomizer records
+  rename(condition_raw = arm, condition_group_raw = grp, condition_subgroup = armchild,
+         randomizer_condition_subgroup_raw = FL_17_DO, randomizer_pattern_raw = FL_34_DO) |>
+  # comprehension questions about the instruction message (up to three attempts)
+  rename(comprehension_control_ventures_attempt1 = comp_ctrl1,
+         comprehension_control_ventures_attempt2 = comp_ctrl1_r1,
+         comprehension_control_ventures_attempt3 = comp_ctrl1_r2,
+         comprehension_control_capital_attempt1 = comp_ctrl2,
+         comprehension_control_capital_attempt2 = comp_ctrl2_r1,
+         comprehension_control_capital_attempt3 = comp_ctrl2_r2,
+         comprehension_disclosure_designer_attempt1 = comp_act1,
+         comprehension_disclosure_designer_attempt2 = comp_act1_r1,
+         comprehension_disclosure_designer_attempt3 = comp_act1_r2,
+         comprehension_disclosure_design_info_attempt1 = comp_act2,
+         comprehension_disclosure_design_info_attempt2 = comp_act2_r1,
+         comprehension_disclosure_design_info_attempt3 = comp_act2_r2,
+         order_comprehension_control_ventures_attempt1_raw = comp_ctrl1_DO,
+         order_comprehension_control_ventures_attempt2_raw = comp_ctrl1_r1_DO,
+         order_comprehension_control_ventures_attempt3_raw = comp_ctrl1_r2_DO,
+         order_comprehension_control_capital_attempt1_raw = comp_ctrl2_DO,
+         order_comprehension_control_capital_attempt2_raw = comp_ctrl2_r1_DO,
+         order_comprehension_control_capital_attempt3_raw = comp_ctrl2_r2_DO,
+         order_comprehension_disclosure_designer_attempt1_raw = comp_act1_DO,
+         order_comprehension_disclosure_designer_attempt2_raw = comp_act1_r1_DO,
+         order_comprehension_disclosure_designer_attempt3_raw = comp_act1_r2_DO,
+         order_comprehension_disclosure_design_info_attempt1_raw = comp_act2_DO,
+         order_comprehension_disclosure_design_info_attempt2_raw = comp_act2_r1_DO,
+         order_comprehension_disclosure_design_info_attempt3_raw = comp_act2_r2_DO,
+         # at least one answer wrong in attempt 1 / attempt 2 (1 = yes, 0 = no)
+         comprehension_wrong_attempt1 = comp_r1, comprehension_wrong_attempt2 = comp_r2,
+         comprehension_attempts = comp_attempts) |>
+  # incentive comprehension question (up to two attempts)
+  rename(incentive_comprehension_attempt1 = incentive_comprehension,
+         incentive_comprehension_attempt2 = incentive_comprehension_r1,
+         order_incentive_comprehension_attempt1_raw = incentive_comprehension_DO,
+         order_incentive_comprehension_attempt2_raw = incentive_comprehension_r1_DO,
+         # answer wrong in attempt 1 / attempt 2 (1 = yes, 0 = no)
+         incentive_wrong_attempt1 = inc_r1, incentive_wrong_attempt2 = inc_r2,
+         incentive_attempts = inc_attempts) |>
+  # per-deck variables: from slot index to explicit slot suffix
+  rename(pagetime_slot1 = `time_1_Page Submit`, pagetime_slot2 = `time_2_Page Submit`,
+         pagetime_slot3 = `time_3_Page Submit`, pagetime_slot4 = `time_4_Page Submit`,
+         firstclick_slot1 = `time_1_First Click`, firstclick_slot2 = `time_2_First Click`,
+         firstclick_slot3 = `time_3_First Click`, firstclick_slot4 = `time_4_First Click`,
+         lastclick_slot1 = `time_1_Last Click`, lastclick_slot2 = `time_2_Last Click`,
+         lastclick_slot3 = `time_3_Last Click`, lastclick_slot4 = `time_4_Last Click`,
+         clickcount_slot1 = `time_1_Click Count`, clickcount_slot2 = `time_2_Click Count`,
+         clickcount_slot3 = `time_3_Click Count`, clickcount_slot4 = `time_4_Click Count`,
+         viewtime_raw_slot1 = dwell_1, viewtime_raw_slot2 = dwell_2,
+         viewtime_raw_slot3 = dwell_3, viewtime_raw_slot4 = dwell_4,
+         coverage_raw_slot1 = cov_1, coverage_raw_slot2 = cov_2,
+         coverage_raw_slot3 = cov_3, coverage_raw_slot4 = cov_4,
+         imageload_raw_slot1 = imgok_1, imageload_raw_slot2 = imgok_2,
+         imageload_raw_slot3 = imgok_3, imageload_raw_slot4 = imgok_4,
+         venture_slot1 = d1_name, venture_slot2 = d2_name,
+         venture_slot3 = d3_name, venture_slot4 = d4_name,
+         sector_slot1 = d1_sub, sector_slot2 = d2_sub,
+         sector_slot3 = d3_sub, sector_slot4 = d4_sub,
+         deck_slot1 = d1_code, deck_slot2 = d2_code,
+         deck_slot3 = d3_code, deck_slot4 = d4_code,
+         allocation_slot1 = advance_choice_1, allocation_slot2 = advance_choice_2,
+         allocation_slot3 = advance_choice_3, allocation_slot4 = advance_choice_4,
+         ease_slot1 = fe_ease_1_1, ease_slot2 = fe_ease_2_1,
+         ease_slot3 = fe_ease_3_1, ease_slot4 = fe_ease_4_1,
+         rating_slot1 = end_quality_1, rating_slot2 = end_quality_2,
+         rating_slot3 = end_quality_3, rating_slot4 = end_quality_4) |>
+  # make all vars lower case (except for IDs)
+  rename_at(vars(-ID, -PROLIFIC_PID, -IP_address), tolower)
+
+# instruction condition and rotation sequence (high or low quality decks first)
+d_qua_clean <- d_qua_clean |>
+  mutate(condition = unname(condition_labels[condition_raw]),
+         sequence = ifelse(pattern <= 8, "hq_first", "lq_first"))
+
+# comprehension of the instruction message
+#   -Note: we record whether a participant also answered the third attempt
+#          incorrectly (i.e., failed all three attempts). The correct answers are
+#          "Four" and "100" (control) and "A design agency" and "Nothing" (both
+#          disclosure conditions).
+d_qua_clean <- d_qua_clean |>
+  mutate(comprehension_failed_all = comprehension_attempts == 3 &
+           ifelse(condition == "control",
+                  !(comprehension_control_ventures_attempt3 %in% "Four" &
+                      comprehension_control_capital_attempt3 %in% 100),
+                  !(comprehension_disclosure_designer_attempt3 %in% "A design agency" &
+                      comprehension_disclosure_design_info_attempt3 %in% "Nothing")))
+
+# decode the realized display order into positions (1-4), e.g., position_slot3 =
+# 4 means that the deck in slot 3 was the last of the four decks shown
+view_pos_1 <- display_position(d_qua_clean$order_view_first_half_raw, c("DeckSlot1", "DeckSlot2"))
+view_pos_2 <- display_position(d_qua_clean$order_view_second_half_raw, c("DeckSlot3", "DeckSlot4"))
+rating_pos <- display_position(d_qua_clean$order_rating_raw,
+                               c("FeltEaseSlot1", "FeltEaseSlot2", "FeltEaseSlot3", "FeltEaseSlot4"))
+alloc_pos <- display_position(d_qua_clean$order_allocation_raw,
+                              c("${e://Field/d1_name} - ${e://Field/d1_sub}", "${e://Field/d2_name} - ${e://Field/d2_sub}",
+                                "${e://Field/d3_name} - ${e://Field/d3_sub}", "${e://Field/d4_name} - ${e://Field/d4_sub}"))
+d_qua_clean <- d_qua_clean |> mutate(
+  # decks of the second half come after the two decks of the first half
+  position_slot1 = view_pos_1$DeckSlot1, position_slot2 = view_pos_1$DeckSlot2,
+  position_slot3 = view_pos_2$DeckSlot3 + 2, position_slot4 = view_pos_2$DeckSlot4 + 2,
+  rating_position_slot1 = rating_pos$FeltEaseSlot1, rating_position_slot2 = rating_pos$FeltEaseSlot2,
+  rating_position_slot3 = rating_pos$FeltEaseSlot3, rating_position_slot4 = rating_pos$FeltEaseSlot4,
+  allocation_position_slot1 = alloc_pos[[1]], allocation_position_slot2 = alloc_pos[[2]],
+  allocation_position_slot3 = alloc_pos[[3]], allocation_position_slot4 = alloc_pos[[4]]
+)
+rm(view_pos_1, view_pos_2, rating_pos, alloc_pos)
+
+# decode the per-deck tracking data (recorded via JavaScript in Qualtrics):
+# total viewing time (in seconds), number of slides viewed, and image loading
+d_qua_clean <- d_qua_clean |> mutate(
+  viewtime_slot1 = viewtime_sec(viewtime_raw_slot1), viewtime_slot2 = viewtime_sec(viewtime_raw_slot2),
+  viewtime_slot3 = viewtime_sec(viewtime_raw_slot3), viewtime_slot4 = viewtime_sec(viewtime_raw_slot4),
+  slides_seen_slot1 = slides_seen(coverage_raw_slot1), slides_seen_slot2 = slides_seen(coverage_raw_slot2),
+  slides_seen_slot3 = slides_seen(coverage_raw_slot3), slides_seen_slot4 = slides_seen(coverage_raw_slot4),
+  images_ok_slot1 = images_ok(imageload_raw_slot1), images_ok_slot2 = images_ok(imageload_raw_slot2),
+  images_ok_slot3 = images_ok(imageload_raw_slot3), images_ok_slot4 = images_ok(imageload_raw_slot4)
+)
+
+# decode the factual recovery answers
+#   -Note: for each slot, the export contains one question per venture (e.g.,
+#          `rec1_servora`), but only the question of the venture shown in this
+#          slot was displayed. we thus collapse the eight columns per slot
+d_qua_clean <- d_qua_clean |> mutate(
+  recovery_answer_slot1 = coalesce(rec1_servora, rec1_curato, rec1_ironhall, rec1_foliant,
+                                   rec1_pulsegrid, rec1_paperloom, rec1_sentyl, rec1_axonmesh),
+  recovery_answer_slot2 = coalesce(rec2_servora, rec2_curato, rec2_ironhall, rec2_foliant,
+                                   rec2_pulsegrid, rec2_paperloom, rec2_sentyl, rec2_axonmesh),
+  recovery_answer_slot3 = coalesce(rec3_servora, rec3_curato, rec3_ironhall, rec3_foliant,
+                                   rec3_pulsegrid, rec3_paperloom, rec3_sentyl, rec3_axonmesh),
+  recovery_answer_slot4 = coalesce(rec4_servora, rec4_curato, rec4_ironhall, rec4_foliant,
+                                   rec4_pulsegrid, rec4_paperloom, rec4_sentyl, rec4_axonmesh)
+)
+
+# decode the slots into the experimental cells (see above)
+#
+# slot that holds the cell
+d_qua_clean <- d_qua_clean |> mutate(
+  slot_hq_hf = ifelse(sequence == "hq_first", 1, 3),
+  slot_lq_hf = ifelse(sequence == "hq_first", 3, 1),
+  slot_hq_lf = ifelse(sequence == "hq_first", 2, 4),
+  slot_lq_lf = ifelse(sequence == "hq_first", 4, 2)
+)
+# venture information
+d_qua_clean <- d_qua_clean |> mutate(
+  venture_hq_hf = ifelse(sequence == "hq_first", venture_slot1, venture_slot3),
+  venture_lq_hf = ifelse(sequence == "hq_first", venture_slot3, venture_slot1),
+  venture_hq_lf = ifelse(sequence == "hq_first", venture_slot2, venture_slot4),
+  venture_lq_lf = ifelse(sequence == "hq_first", venture_slot4, venture_slot2),
+
+  sector_hq_hf = ifelse(sequence == "hq_first", sector_slot1, sector_slot3),
+  sector_lq_hf = ifelse(sequence == "hq_first", sector_slot3, sector_slot1),
+  sector_hq_lf = ifelse(sequence == "hq_first", sector_slot2, sector_slot4),
+  sector_lq_lf = ifelse(sequence == "hq_first", sector_slot4, sector_slot2),
+
+  deck_hq_hf = ifelse(sequence == "hq_first", deck_slot1, deck_slot3),
+  deck_lq_hf = ifelse(sequence == "hq_first", deck_slot3, deck_slot1),
+  deck_hq_lf = ifelse(sequence == "hq_first", deck_slot2, deck_slot4),
+  deck_lq_lf = ifelse(sequence == "hq_first", deck_slot4, deck_slot2)
+)
+# dependent variables and further measures
+d_qua_clean <- d_qua_clean |> mutate(
+  rating_hq_hf = ifelse(sequence == "hq_first", rating_slot1, rating_slot3),
+  rating_lq_hf = ifelse(sequence == "hq_first", rating_slot3, rating_slot1),
+  rating_hq_lf = ifelse(sequence == "hq_first", rating_slot2, rating_slot4),
+  rating_lq_lf = ifelse(sequence == "hq_first", rating_slot4, rating_slot2),
+
+  ease_hq_hf = ifelse(sequence == "hq_first", ease_slot1, ease_slot3),
+  ease_lq_hf = ifelse(sequence == "hq_first", ease_slot3, ease_slot1),
+  ease_hq_lf = ifelse(sequence == "hq_first", ease_slot2, ease_slot4),
+  ease_lq_lf = ifelse(sequence == "hq_first", ease_slot4, ease_slot2),
+
+  allocation_hq_hf = ifelse(sequence == "hq_first", allocation_slot1, allocation_slot3),
+  allocation_lq_hf = ifelse(sequence == "hq_first", allocation_slot3, allocation_slot1),
+  allocation_hq_lf = ifelse(sequence == "hq_first", allocation_slot2, allocation_slot4),
+  allocation_lq_lf = ifelse(sequence == "hq_first", allocation_slot4, allocation_slot2),
+
+  recovery_answer_hq_hf = ifelse(sequence == "hq_first", recovery_answer_slot1, recovery_answer_slot3),
+  recovery_answer_lq_hf = ifelse(sequence == "hq_first", recovery_answer_slot3, recovery_answer_slot1),
+  recovery_answer_hq_lf = ifelse(sequence == "hq_first", recovery_answer_slot2, recovery_answer_slot4),
+  recovery_answer_lq_lf = ifelse(sequence == "hq_first", recovery_answer_slot4, recovery_answer_slot2)
+)
+# display order
+d_qua_clean <- d_qua_clean |> mutate(
+  position_hq_hf = ifelse(sequence == "hq_first", position_slot1, position_slot3),
+  position_lq_hf = ifelse(sequence == "hq_first", position_slot3, position_slot1),
+  position_hq_lf = ifelse(sequence == "hq_first", position_slot2, position_slot4),
+  position_lq_lf = ifelse(sequence == "hq_first", position_slot4, position_slot2),
+
+  rating_position_hq_hf = ifelse(sequence == "hq_first", rating_position_slot1, rating_position_slot3),
+  rating_position_lq_hf = ifelse(sequence == "hq_first", rating_position_slot3, rating_position_slot1),
+  rating_position_hq_lf = ifelse(sequence == "hq_first", rating_position_slot2, rating_position_slot4),
+  rating_position_lq_lf = ifelse(sequence == "hq_first", rating_position_slot4, rating_position_slot2),
+
+  allocation_position_hq_hf = ifelse(sequence == "hq_first", allocation_position_slot1, allocation_position_slot3),
+  allocation_position_lq_hf = ifelse(sequence == "hq_first", allocation_position_slot3, allocation_position_slot1),
+  allocation_position_hq_lf = ifelse(sequence == "hq_first", allocation_position_slot2, allocation_position_slot4),
+  allocation_position_lq_lf = ifelse(sequence == "hq_first", allocation_position_slot4, allocation_position_slot2)
+)
+# per-deck data (page time in seconds, viewing time, slides viewed, image load)
+d_qua_clean <- d_qua_clean |> mutate(
+  pagetime_hq_hf = ifelse(sequence == "hq_first", pagetime_slot1, pagetime_slot3),
+  pagetime_lq_hf = ifelse(sequence == "hq_first", pagetime_slot3, pagetime_slot1),
+  pagetime_hq_lf = ifelse(sequence == "hq_first", pagetime_slot2, pagetime_slot4),
+  pagetime_lq_lf = ifelse(sequence == "hq_first", pagetime_slot4, pagetime_slot2),
+
+  viewtime_hq_hf = ifelse(sequence == "hq_first", viewtime_slot1, viewtime_slot3),
+  viewtime_lq_hf = ifelse(sequence == "hq_first", viewtime_slot3, viewtime_slot1),
+  viewtime_hq_lf = ifelse(sequence == "hq_first", viewtime_slot2, viewtime_slot4),
+  viewtime_lq_lf = ifelse(sequence == "hq_first", viewtime_slot4, viewtime_slot2),
+
+  slides_seen_hq_hf = ifelse(sequence == "hq_first", slides_seen_slot1, slides_seen_slot3),
+  slides_seen_lq_hf = ifelse(sequence == "hq_first", slides_seen_slot3, slides_seen_slot1),
+  slides_seen_hq_lf = ifelse(sequence == "hq_first", slides_seen_slot2, slides_seen_slot4),
+  slides_seen_lq_lf = ifelse(sequence == "hq_first", slides_seen_slot4, slides_seen_slot2),
+
+  images_ok_hq_hf = ifelse(sequence == "hq_first", images_ok_slot1, images_ok_slot3),
+  images_ok_lq_hf = ifelse(sequence == "hq_first", images_ok_slot3, images_ok_slot1),
+  images_ok_hq_lf = ifelse(sequence == "hq_first", images_ok_slot2, images_ok_slot4),
+  images_ok_lq_lf = ifelse(sequence == "hq_first", images_ok_slot4, images_ok_slot2)
+)
+# score the factual recovery answers: an answer is correct (= 1) if it matches
+# the correct answer for the content version of the venture shown in the cell
+d_qua_clean <- d_qua_clean |> mutate(
+  recovery_correct_hq_hf = as.numeric(recovery_answer_hq_hf == recovery_correct_hq[venture_hq_hf]),
+  recovery_correct_hq_lf = as.numeric(recovery_answer_hq_lf == recovery_correct_hq[venture_hq_lf]),
+  recovery_correct_lq_hf = as.numeric(recovery_answer_lq_hf == recovery_correct_lq[venture_lq_hf]),
+  recovery_correct_lq_lf = as.numeric(recovery_answer_lq_lf == recovery_correct_lq[venture_lq_lf])
+)
+
+# remove the variables that are replaced by the variables created above
+#   -Note: this has to happen before the exclusions, since, e.g., the recovery
+#          questions of the ventures not shown are always missing
+d_qua_clean <- d_qua_clean |> select(-c(
+  # condition assignment (replaced by `condition`, `condition_subgroup`, `pattern`)
+  condition_raw, condition_group_raw,
+  randomizer_condition_subgroup_raw, randomizer_pattern_raw,
+  # comprehension questions about the instruction message (replaced by
+  # `comprehension_attempts` and `comprehension_failed_all`)
+  starts_with("comprehension_control_"), starts_with("comprehension_disclosure_"),
+  starts_with("order_comprehension_"),
+  comprehension_wrong_attempt1, comprehension_wrong_attempt2,
+  # incentive comprehension question (replaced by `incentive_attempts`)
+  incentive_comprehension_attempt1, incentive_comprehension_attempt2,
+  order_incentive_comprehension_attempt1_raw, order_incentive_comprehension_attempt2_raw,
+  incentive_wrong_attempt1, incentive_wrong_attempt2,
+  # factual recovery questions per slot and venture and their answer option
+  # orders (replaced by `recovery_answer_slot1` to `recovery_answer_slot4`)
+  matches("^rec[1-4]_"),
+  # display order records (replaced by the position variables)
+  order_view_first_half_raw, order_view_second_half_raw,
+  order_rating_raw, order_allocation_raw,
+  # per-slot variables (replaced by the cell versions)
+  starts_with(c("venture_slot", "sector_slot", "deck_slot",
+                "rating_slot", "ease_slot", "allocation_slot",
+                "position_slot", "rating_position_slot", "allocation_position_slot",
+                "pagetime_slot", "viewtime_raw_slot", "viewtime_slot",
+                "coverage_raw_slot", "slides_seen_slot",
+                "imageload_raw_slot", "images_ok_slot")),
+  recovery_answer_slot1, recovery_answer_slot2, recovery_answer_slot3, recovery_answer_slot4
+))
+
+# Demographic data (Prolific)
+d_pro <- readr::read_csv(here(data_dir, 'Study_4_Prolific.csv'))
+# make variable names more coding friendly
+d_pro_clean <- d_pro |>
+  rename(investment_types = `Types of investment`, ethnicity = `Ethnicity simplified`,
+         country = `Country of residence`, employment = `Employment status`) |>
+  rename_at(vars(-ID), tolower)
+# remove age and sex from the data, since we explicitly asked this information
+# in Qualtrics
+d_pro_clean <- d_pro_clean |>
+  select(-age, -sex)
+
+# Merging the data
+#
+# merge Qualtrics and Prolific data
+d_all <- full_join(d_qua_clean, d_pro_clean, by = "ID")
+# to make typing easier, let's call our data d for now
+d <- d_all
+rm(d_all, d_pro, d_pro_clean, d_qua, d_qua_clean, condition_labels,
+   recovery_correct_hq, recovery_correct_lq)
+
+# Exclusions (participant level)
+#
+# participants did not give consent (or did not answer but closed survey or
+# returned study submission)
+d <- d |> filter(!(consent != "yes"))
+# incomplete responses
+#   -Note: the exceptions are the text field of the "other" option and
+#          demographic information from Prolific (may be expired)
+d <- d |> tidyr::drop_na(!c(attention_check_text, investment_types, ethnicity,
+                            country, nationality, employment))
+# Prolific ID is missing
+d <- d |> filter(!(is.na(ID)))
+# reported Prolific ID (ID) is different from actual Prolific ID
+d <- d |> filter(!(ID != PROLIFIC_PID))
+# Prolific submission returned or timed out
+d <- d |> filter(!(status %in% c("RETURNED", "TIMED-OUT")))
+# duplicate Prolific IDs (first complete response is kept)
+d <- d |> arrange(startdate) |> group_by(ID) |> slice(1) |> ungroup()
+# duplicate IP Address (first complete response is kept)
+d <- d |> arrange(startdate) |> group_by(IP_address) |> slice(1) |> ungroup()
+# duration to complete survey more than 60 minutes
+#   -Note: `duration_study` was measured in seconds
+#          thus 60 minutes = 3600 seconds
+d <- d |> filter(!(duration_study > 3600))
+# participants failed attention check
+#
+# check which answers were given in text field
+# unique(d$attention_check_text[d$attention_check == "Other"])
+#
+# versions of correct answers
+str_attention_correct <- c(
+  "I have read this text carefully",
+  "i have read this text carefully",
+  "I HAVE READ THIS TEXT CAREFULLY",
+  "I have read this carefully",
+  "I have read this text carefully.",
+  "I have read this text caefully",
+  "I  have read this text carefully",
+  "I have read ths text carefully",
+  "I have read the text carefully",
+  "I have read this text carefuly",
+  "\"I have read this text carefully\"",
+  "I have read this text carrefully",
+  "I have read this text carefully\n",
+  "I have read this text careffully",
+  "\u201cI have read this text carefully\u201d",
+  "I have read this text carefully\u201d into the text field",
+  "I have ready this text carefully",
+  "I have raed this text carefully",
+  "\"I have read this text carefully\u201d",
+  "''I have read this text carefully''",
+  "I have read the text carefully."
+)
+# exclude participants with an answer not listed above
+d <- d |> filter(!(attention_check != "Other" |
+                 attention_check_text %notin% str_attention_correct))
+
+# Exclusions (observation level)
+#
+# --Note: An observation is one participant's responses to one deck. Thus, we
+#         do not remove whole participants but set the deck-level dependent
+#         variables (quality rating, capital allocation, factual recovery) of an
+#         invalid deck to NA. A deck is invalid if (1) the slide deck was not
+#         correctly loaded, (2) the slide deck was viewed for less than 3
+#         seconds or more than 30 minutes, or (3) there is no quality rating.
+#         The manipulation checks are not affected by these exclusions; we thus
+#         keep a copy of the quality ratings of all decks (`rating_all_*`), and
+#         felt ease is not set to NA.
+#
+# (1) slide deck not correctly loaded
+#     -> see `images_ok_*` from above
+#
+# (2) slide deck viewed for less than 3 seconds or more than 30 minutes
+d <- d |> mutate(
+  viewtime_off_hq_hf = is.na(viewtime_hq_hf) | viewtime_hq_hf < 3 | viewtime_hq_hf > 1800,
+  viewtime_off_lq_hf = is.na(viewtime_lq_hf) | viewtime_lq_hf < 3 | viewtime_lq_hf > 1800,
+  viewtime_off_hq_lf = is.na(viewtime_hq_lf) | viewtime_hq_lf < 3 | viewtime_hq_lf > 1800,
+  viewtime_off_lq_lf = is.na(viewtime_lq_lf) | viewtime_lq_lf < 3 | viewtime_lq_lf > 1800
+)
+# (3) no quality rating
+#   -Note: the quality rating was a forced-response item, so this criterion
+#          should never apply after the exclusion of incomplete responses
+d <- d |> mutate(
+  rating_missing_hq_hf = is.na(rating_hq_hf),
+  rating_missing_lq_hf = is.na(rating_lq_hf),
+  rating_missing_hq_lf = is.na(rating_hq_lf),
+  rating_missing_lq_lf = is.na(rating_lq_lf)
+)
+# combine the three criteria into one "invalid" flag per deck
+d <- d |> mutate(
+  invalid_hq_hf = !images_ok_hq_hf | viewtime_off_hq_hf | rating_missing_hq_hf,
+  invalid_lq_hf = !images_ok_lq_hf | viewtime_off_lq_hf | rating_missing_lq_hf,
+  invalid_hq_lf = !images_ok_hq_lf | viewtime_off_hq_lf | rating_missing_hq_lf,
+  invalid_lq_lf = !images_ok_lq_lf | viewtime_off_lq_lf | rating_missing_lq_lf
+)
+# keep a copy of the ratings of all decks (for the manipulation check)
+d <- d |> mutate(
+  rating_all_hq_hf = rating_hq_hf,
+  rating_all_lq_hf = rating_lq_hf,
+  rating_all_hq_lf = rating_hq_lf,
+  rating_all_lq_lf = rating_lq_lf
+)
+# set the deck-level dependent variables of every invalid deck to NA
+d <- d |> mutate(
+  rating_hq_hf = ifelse(invalid_hq_hf, NA, rating_hq_hf),
+  rating_lq_hf = ifelse(invalid_lq_hf, NA, rating_lq_hf),
+  rating_hq_lf = ifelse(invalid_hq_lf, NA, rating_hq_lf),
+  rating_lq_lf = ifelse(invalid_lq_lf, NA, rating_lq_lf),
+  allocation_hq_hf = ifelse(invalid_hq_hf, NA, allocation_hq_hf),
+  allocation_lq_hf = ifelse(invalid_lq_hf, NA, allocation_lq_hf),
+  allocation_hq_lf = ifelse(invalid_hq_lf, NA, allocation_hq_lf),
+  allocation_lq_lf = ifelse(invalid_lq_lf, NA, allocation_lq_lf),
+  recovery_correct_hq_hf = ifelse(invalid_hq_hf, NA, recovery_correct_hq_hf),
+  recovery_correct_lq_hf = ifelse(invalid_lq_hf, NA, recovery_correct_lq_hf),
+  recovery_correct_hq_lf = ifelse(invalid_hq_lf, NA, recovery_correct_hq_lf),
+  recovery_correct_lq_lf = ifelse(invalid_lq_lf, NA, recovery_correct_lq_lf)
+)
+
+# Preregistered contrasts
+#
+# fluency contrast = mean(high-fluency decks) - mean(low-fluency decks)
+# quality contrast = mean(high-quality decks) - mean(low-quality decks)
+#   -Note: the contrasts are computed for the quality ratings (primary DV, in
+#          rating points) and for the capital allocation (in units out of 100).
+#          They are NA if any of the four decks is invalid.
+d <- d |> mutate(
+  fluency_contrast_rating = rowMeans(pick(rating_hq_hf, rating_lq_hf)) -
+                            rowMeans(pick(rating_hq_lf, rating_lq_lf)),
+  quality_contrast_rating = rowMeans(pick(rating_hq_hf, rating_hq_lf)) -
+                            rowMeans(pick(rating_lq_hf, rating_lq_lf)),
+  fluency_contrast_allocation = rowMeans(pick(allocation_hq_hf, allocation_lq_hf)) -
+                                rowMeans(pick(allocation_hq_lf, allocation_lq_lf)),
+  quality_contrast_allocation = rowMeans(pick(allocation_hq_hf, allocation_hq_lf)) -
+                                rowMeans(pick(allocation_lq_hf, allocation_lq_lf))
+)
+
+# Covariates
+#
+# group "Non-binary" and "Prefer not to say" gender categories into one
+d$gender <- forcats::fct_collapse(d$gender, Female = "Female", Male = "Male", other_level = "Other")
+
+# keep only the variables that are needed for the analyses
+d <- d |>
+  select(
+    # identifier
+    ID,
+    # experimental design: condition, rotation pattern and venture assignment
+    condition, condition_subgroup, pattern, sequence,
+    slot_hq_hf, slot_lq_hf, slot_hq_lf, slot_lq_lf,
+    venture_hq_hf, venture_lq_hf, venture_hq_lf, venture_lq_lf,
+    deck_hq_hf, deck_lq_hf, deck_hq_lf, deck_lq_lf,
+    sector_hq_hf, sector_lq_hf, sector_hq_lf, sector_lq_lf,
+    # experimental design: realized display order
+    position_hq_hf, position_lq_hf, position_hq_lf, position_lq_lf,
+    rating_position_hq_hf, rating_position_lq_hf, rating_position_hq_lf, rating_position_lq_lf,
+    allocation_position_hq_hf, allocation_position_lq_hf,
+    allocation_position_hq_lf, allocation_position_lq_lf,
+    # primary DV (quality ratings, invalid decks set to NA)
+    rating_hq_hf, rating_lq_hf, rating_hq_lf, rating_lq_lf,
+    # further DVs (invalid decks set to NA)
+    allocation_hq_hf, allocation_lq_hf, allocation_hq_lf, allocation_lq_lf,
+    recovery_correct_hq_hf, recovery_correct_lq_hf, recovery_correct_hq_lf, recovery_correct_lq_lf,
+    # preregistered contrasts
+    fluency_contrast_rating, quality_contrast_rating,
+    fluency_contrast_allocation, quality_contrast_allocation,
+    # manipulation checks (all decks)
+    ease_hq_hf, ease_lq_hf, ease_hq_lf, ease_lq_lf,
+    rating_all_hq_hf, rating_all_lq_hf, rating_all_hq_lf, rating_all_lq_lf,
+    # beliefs about the informativeness of the design
+    belief_quality, belief_founders,
+    # per-deck data
+    recovery_answer_hq_hf, recovery_answer_lq_hf, recovery_answer_hq_lf, recovery_answer_lq_lf,
+    viewtime_hq_hf, viewtime_lq_hf, viewtime_hq_lf, viewtime_lq_lf,
+    pagetime_hq_hf, pagetime_lq_hf, pagetime_hq_lf, pagetime_lq_lf,
+    slides_seen_hq_hf, slides_seen_lq_hf, slides_seen_hq_lf, slides_seen_lq_lf,
+    images_ok_hq_hf, images_ok_lq_hf, images_ok_hq_lf, images_ok_lq_lf,
+    invalid_hq_hf, invalid_lq_hf, invalid_hq_lf, invalid_lq_lf,
+    # comprehension of the instructions
+    comprehension_attempts, comprehension_failed_all, incentive_attempts,
+    # covariates and individual differences
+    age, gender, invest_experience,
+    # prolific demographics
+    investment_types, ethnicity, country, nationality, employment,
+    # checks and probes
+    suspicion_probe, funnel_about,
+    # study meta-information
+    duration_study, viewport_width, viewport_height
+  )
+
+# Long format
+#
+# the mixed-effects models need one row per participant x deck (i.e., 4 rows
+# per participant). we build the long format by hand: for each of the 4 cells,
+# we create a small data frame with the same variables, and we stack them
+# afterwards
+#   -Note: `half` indicates whether the deck was shown before (first) or after
+#          (second) the midway reminder
+d_hq_hf <- d |>
+  mutate(ID, condition, pattern, sequence,
+        cell = "hq_hf",
+        quality = "high",  fluency = "high",
+        venture = venture_hq_hf, deck = deck_hq_hf, slot = slot_hq_hf,
+        position = position_hq_hf, half = ifelse(position_hq_hf <= 2, "first", "second"),
+        rating_position = rating_position_hq_hf, allocation_position = allocation_position_hq_hf,
+        rating = rating_hq_hf, allocation = allocation_hq_hf,
+        recovery_correct = recovery_correct_hq_hf,
+        ease = ease_hq_hf, rating_all = rating_all_hq_hf,
+        viewtime = viewtime_hq_hf, pagetime = pagetime_hq_hf, slides_seen = slides_seen_hq_hf,
+        invalid = invalid_hq_hf,
+        .keep = "none") # .keep = "none" keeps only the variables listed above
+
+d_lq_hf <- d |>
+  mutate(ID, condition, pattern, sequence,
+        cell = "lq_hf",
+        quality = "low",   fluency = "high",
+        venture = venture_lq_hf, deck = deck_lq_hf, slot = slot_lq_hf,
+        position = position_lq_hf, half = ifelse(position_lq_hf <= 2, "first", "second"),
+        rating_position = rating_position_lq_hf, allocation_position = allocation_position_lq_hf,
+        rating = rating_lq_hf, allocation = allocation_lq_hf,
+        recovery_correct = recovery_correct_lq_hf,
+        ease = ease_lq_hf, rating_all = rating_all_lq_hf,
+        viewtime = viewtime_lq_hf, pagetime = pagetime_lq_hf, slides_seen = slides_seen_lq_hf,
+        invalid = invalid_lq_hf,
+        .keep = "none")
+
+d_hq_lf <- d |>
+  mutate(ID, condition, pattern, sequence,
+        cell = "hq_lf",
+        quality = "high",  fluency = "low",
+        venture = venture_hq_lf, deck = deck_hq_lf, slot = slot_hq_lf,
+        position = position_hq_lf, half = ifelse(position_hq_lf <= 2, "first", "second"),
+        rating_position = rating_position_hq_lf, allocation_position = allocation_position_hq_lf,
+        rating = rating_hq_lf, allocation = allocation_hq_lf,
+        recovery_correct = recovery_correct_hq_lf,
+        ease = ease_hq_lf, rating_all = rating_all_hq_lf,
+        viewtime = viewtime_hq_lf, pagetime = pagetime_hq_lf, slides_seen = slides_seen_hq_lf,
+        invalid = invalid_hq_lf,
+        .keep = "none")
+
+d_lq_lf <- d |>
+  mutate(ID, condition, pattern, sequence,
+        cell = "lq_lf",
+        quality = "low",   fluency = "low",
+        venture = venture_lq_lf, deck = deck_lq_lf, slot = slot_lq_lf,
+        position = position_lq_lf, half = ifelse(position_lq_lf <= 2, "first", "second"),
+        rating_position = rating_position_lq_lf, allocation_position = allocation_position_lq_lf,
+        rating = rating_lq_lf, allocation = allocation_lq_lf,
+        recovery_correct = recovery_correct_lq_lf,
+        ease = ease_lq_lf, rating_all = rating_all_lq_lf,
+        viewtime = viewtime_lq_lf, pagetime = pagetime_lq_lf, slides_seen = slides_seen_lq_lf,
+        invalid = invalid_lq_lf,
+        .keep = "none")
+
+# put everything together
+d_long <- bind_rows(d_hq_hf, d_lq_hf, d_hq_lf, d_lq_lf)
+rm(d_hq_hf, d_lq_hf, d_hq_lf, d_lq_lf)
+
+# add covariates and demographics
+d_long <- d_long |>
+  left_join(d |> select(ID, belief_quality, belief_founders,
+                        comprehension_attempts, comprehension_failed_all,
+                        suspicion_probe, age, gender, invest_experience,
+                        investment_types, ethnicity, country, nationality,
+                        employment),
+            by = "ID")
+```
+
+
+
+# Descriptives
+
+@tbl-obs gives a demographic overview of the dataset per instruction condition.
+Moreover, @tbl-randomization-check shows which startups appeared in which version in each of the sixteen rotation patterns and whether the two high quality or the two low quality decks were shown before the reminder. It also shows the final N per rotation pattern and condition after the preregistered exclusions. Across the conditions, these numbers reflect the 1:5:2 assignment ratio.
+@tbl-descriptives-1 and @tbl-descriptives-allocation-1 show a descriptive breakdown of the perceived venture quality ratings (i.e., the main dependent variable) and of the investment allocation by instruction condition, visual fluency, and substantive quality, and @tbl-descriptives-2 and @tbl-descriptives-allocation-2 show the participant-level contrasts that we used in the analyses (cf. @sec-main).
+
+Note that the observation-level exclusions affected `r sum(d_long$invalid)` of the `r scales::comma(nrow(d_long))` decks. Thus, the analyzable sample for the confirmatory tests, that is, all participants with four valid decks, comprises `r sum(!is.na(d$fluency_contrast_rating))` participants (control: `r sum(!is.na(d$fluency_contrast_rating[d$condition == "control"]))`; disclosure: `r sum(!is.na(d$fluency_contrast_rating[d$condition == "disclosure"]))`; disclosure plus explanation: `r sum(!is.na(d$fluency_contrast_rating[d$condition == "disclosure_explanation"]))`).
+
+```{r}
+#| label: tbl-obs
+#| tbl-cap: 'Sample overview per instruction condition'
+
+# convert condition into factor (for the tables)
+d$Condition <- factor(d$condition, levels = c("control", "disclosure", "disclosure_explanation"),
+                      labels = c("Control", "Disclosure", "Disclosure + explanation"))
+
+# create demographics table
+d |>
+  group_by(Condition) |>
+  summarize(N = n(),
+            Age = round(mean(age, na.rm = T), 2),
+            `% Female`= round(prop.table(table(gender))["Female"]*100, 1),
+    `Investment Experience` = paste0(weights::rd(mean(invest_experience, na.rm = T), 2), " (±", weights::rd(sd(invest_experience, na.rm = T), 2), ")"),
+            `% White` = round(prop.table(table(ethnicity))["White"]*100, 1),
+            `% US` = round(prop.table(table(country))["United States"]*100, 1),
+            `% Full-Time Empl.` = round(prop.table(table(employment))["Full-Time"]*100, 1)
+            ) |> kbl() |> kable_styling()
+```
+
+```{r}
+#| label: tbl-randomization-check
+#| tbl-cap: 'Rotation patterns and randomization check'
+
+d |> group_by(Pattern = pattern) |>
+  summarize(
+    # decks shown before the midway reminder
+    first_half = ifelse(unique(sequence) == "hq_first", "High quality", "Low quality"),
+    # startups per combination of fluency and quality
+    hf_hq = unique(venture_hq_hf), hf_lq = unique(venture_lq_hf),
+    lf_hq = unique(venture_hq_lf), lf_lq = unique(venture_lq_lf),
+    # final N per condition
+    n_control = sum(condition == "control"),
+    n_disclosure = sum(condition == "disclosure"),
+    n_explanation = sum(condition == "disclosure_explanation")
+  ) |>
+  kbl(col.names = c("Pattern", "Decks Before Reminder", rep(c("High Quality", "Low Quality"), 2),
+                    "Control", "Disclosure", "Disclosure + Explanation"),
+      align = "ccccccccc") |>
+  kable_styling() |>
+  column_spec(2, extra_css = "white-space: nowrap;") |>
+  add_header_above(c(" " = 2, "High Fluency" = 2, "Low Fluency" = 2, " " = 3)) |>
+  add_header_above(c(" " = 2, "Startup per Deck Version" = 4, "Final N per Condition" = 3))
+```
+
+::: {#tbl-descriptives layout-nrow=2}
+
+::: {#tbl-descriptives-1}
+
+```{r}
+# analyzable sample: participants with four valid decks
+d_valid <- d |> filter(!is.na(fluency_contrast_rating))
+d_long_valid <- d_long |> filter(ID %in% d_valid$ID)
+
+# ratings per condition and experimental cell
+# --Note: `group_by(fluency, quality)` orders the cells as HF-HQ, HF-LQ, LF-HQ, LF-LQ
+d_long_valid |> filter(condition == "control") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(rating), SD = sd(rating)) |> ungroup() -> temp_ctrl
+d_long_valid |> filter(condition == "disclosure") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(rating), SD = sd(rating)) |> ungroup() -> temp_disc
+d_long_valid |> filter(condition == "disclosure_explanation") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(rating), SD = sd(rating)) |> ungroup() -> temp_expl
+temp_cells <- data.frame(
+  fluency = c("High", "High", "Low", "Low"),
+  quality = c("High", "Low", "High", "Low"),
+  N_ctrl = temp_ctrl$N, Mean_ctrl = temp_ctrl$Mean, SD_ctrl = temp_ctrl$SD,
+  N_disc = temp_disc$N, Mean_disc = temp_disc$Mean, SD_disc = temp_disc$SD,
+  N_expl = temp_expl$N, Mean_expl = temp_expl$Mean, SD_expl = temp_expl$SD)
+
+temp_cells |>
+  kbl(digits = 2, col.names = c("Fluency", "Quality", rep(c("N", "Mean", "SD"), 3)), align = "llccccccccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 2, "Control" = 3, "Disclosure" = 3, "Disclosure + Explanation" = 3)) |>
+  add_header_above(c(" " = 2, "Perceived Venture Quality Rating per Deck (1–7)" = 9))
+```
+
+Perceived venture quality rating per deck
+:::
+
+::: {#tbl-descriptives-2}
+
+```{r}
+# participant-level contrasts (in rating points) per condition
+d_valid |> group_by(condition) |>
+  summarize(N = n(), Mean = mean(fluency_contrast_rating), SD = sd(fluency_contrast_rating)) -> temp_fluency
+d_valid |> group_by(condition) |>
+  summarize(N = n(), Mean = mean(quality_contrast_rating), SD = sd(quality_contrast_rating)) -> temp_quality
+temp_contrasts <- data.frame(
+  row = c("Fluency contrast", "Quality contrast"),
+  N_ctrl = c(temp_fluency$N[1], temp_quality$N[1]),
+  Mean_ctrl = c(temp_fluency$Mean[1], temp_quality$Mean[1]),
+  SD_ctrl = c(temp_fluency$SD[1], temp_quality$SD[1]),
+  N_disc = c(temp_fluency$N[2], temp_quality$N[2]),
+  Mean_disc = c(temp_fluency$Mean[2], temp_quality$Mean[2]),
+  SD_disc = c(temp_fluency$SD[2], temp_quality$SD[2]),
+  N_expl = c(temp_fluency$N[3], temp_quality$N[3]),
+  Mean_expl = c(temp_fluency$Mean[3], temp_quality$Mean[3]),
+  SD_expl = c(temp_fluency$SD[3], temp_quality$SD[3]))
+
+temp_contrasts |>
+  kbl(digits = 2, col.names = c("", rep(c("N", "Mean", "SD"), 3)), align = "lccccccccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Control" = 3, "Disclosure" = 3, "Disclosure + Explanation" = 3)) |>
+  add_header_above(c(" " = 1, "Participant-Level Contrast (High Minus Low Level, in Rating Points)" = 9)) |>
+  column_spec(1, extra_css = "white-space: nowrap;")
+```
+
+Participant-level contrasts
+:::
+
+Descriptive statistics: Perceived venture quality ratings (analyzable sample)
+:::
+
+::: {#tbl-descriptives-allocation layout-nrow=2}
+
+::: {#tbl-descriptives-allocation-1}
+
+```{r}
+# allocation per condition and experimental cell
+d_long_valid |> filter(condition == "control") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(allocation), SD = sd(allocation)) |> ungroup() -> temp_ctrl
+d_long_valid |> filter(condition == "disclosure") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(allocation), SD = sd(allocation)) |> ungroup() -> temp_disc
+d_long_valid |> filter(condition == "disclosure_explanation") |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(allocation), SD = sd(allocation)) |> ungroup() -> temp_expl
+temp_cells <- data.frame(
+  fluency = c("High", "High", "Low", "Low"),
+  quality = c("High", "Low", "High", "Low"),
+  N_ctrl = temp_ctrl$N, Mean_ctrl = temp_ctrl$Mean, SD_ctrl = temp_ctrl$SD,
+  N_disc = temp_disc$N, Mean_disc = temp_disc$Mean, SD_disc = temp_disc$SD,
+  N_expl = temp_expl$N, Mean_expl = temp_expl$Mean, SD_expl = temp_expl$SD)
+
+temp_cells |>
+  kbl(digits = 2, col.names = c("Fluency", "Quality", rep(c("N", "Mean", "SD"), 3)), align = "llccccccccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 2, "Control" = 3, "Disclosure" = 3, "Disclosure + Explanation" = 3)) |>
+  add_header_above(c(" " = 2, "Investment Allocation per Deck (in Units)" = 9))
+```
+
+Investment allocation per deck
+:::
+
+::: {#tbl-descriptives-allocation-2}
+
+```{r}
+# participant-level contrasts (in units) per condition
+d_valid |> group_by(condition) |>
+  summarize(N = n(), Mean = mean(fluency_contrast_allocation), SD = sd(fluency_contrast_allocation)) -> temp_fluency
+d_valid |> group_by(condition) |>
+  summarize(N = n(), Mean = mean(quality_contrast_allocation), SD = sd(quality_contrast_allocation)) -> temp_quality
+temp_contrasts <- data.frame(
+  row = c("Fluency contrast", "Quality contrast"),
+  N_ctrl = c(temp_fluency$N[1], temp_quality$N[1]),
+  Mean_ctrl = c(temp_fluency$Mean[1], temp_quality$Mean[1]),
+  SD_ctrl = c(temp_fluency$SD[1], temp_quality$SD[1]),
+  N_disc = c(temp_fluency$N[2], temp_quality$N[2]),
+  Mean_disc = c(temp_fluency$Mean[2], temp_quality$Mean[2]),
+  SD_disc = c(temp_fluency$SD[2], temp_quality$SD[2]),
+  N_expl = c(temp_fluency$N[3], temp_quality$N[3]),
+  Mean_expl = c(temp_fluency$Mean[3], temp_quality$Mean[3]),
+  SD_expl = c(temp_fluency$SD[3], temp_quality$SD[3]))
+
+temp_contrasts |>
+  kbl(digits = 2, col.names = c("", rep(c("N", "Mean", "SD"), 3)), align = "lccccccccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Control" = 3, "Disclosure" = 3, "Disclosure + Explanation" = 3)) |>
+  add_header_above(c(" " = 1, "Participant-Level Contrast (High Minus Low Level, in Units)" = 9)) |>
+  column_spec(1, extra_css = "white-space: nowrap;")
+```
+
+Participant-level contrasts
+:::
+
+Descriptive statistics: Investment allocation (units out of 100; analyzable sample)
+:::
+
+
+# Results {#sec-results}
+
+In this section, we first report the preregistered confirmatory tests and the preregistered decision rule for the disclosure condition. @sec-further, @sec-mc, @sec-sensitivity, and @sec-exploratory then show the results of the further preregistered measures, the manipulation checks, the sensitivity analyses, and the exploratory analyses, respectively.
+
+
+## Main analyses {#sec-main}
+
+As preregistered, we computed for each participant a fluency contrast on the perceived venture quality ratings (in rating points):
+
+$$
+\text{FC}_{i} = \frac{1}{2} \sum_{d \in \text{HF}_{i}} r_{id} - \frac{1}{2} \sum_{d \in \text{LF}_{i}} r_{id},
+$$
+
+where $r_{id}$ is participant $i$'s perceived venture quality rating (1–7) of deck $d$, and $\text{HF}_{i}$ and $\text{LF}_{i}$ are the two high and the two low fluency decks that the participant saw. Since each of these two sets contains one high and one low quality deck, substantive quality is balanced out of the fluency contrast by construction. For completeness, we also computed the analogous quality contrast (the two high minus the two low quality decks) and the same contrasts on the allocated units. For example, a fluency contrast of 0.5 means that the two high fluency decks were rated, on average, half a rating point higher than the two low fluency decks. All confirmatory tests use the analyzable sample (i.e., participants with four valid decks).
+
+The preregistered predictions were that the fluency contrast is positive in the control condition, that it remains positive in the disclosure condition, and that it is smaller in the disclosure plus explanation condition than in the disclosure condition (hypotheses H1, H2, and H3 in the preregistration, Hypotheses 3, 4, and 5 in the paper). @tbl-results-contrasts shows the results of the one-sample t-tests of the fluency contrast against zero. For the control condition (@tbl-results-contrasts-1), we preregistered a one-sided test (fluency contrast > 0). For the disclosure condition (@tbl-results-contrasts-2), we preregistered a two-sided test together with the 95% confidence interval and the Bayes factor (BF<sub>10</sub>; default Cauchy prior with r = 0.707, point null at zero). All confidence intervals are two-sided, also for the one-sided test.
+
+::: {#tbl-results-contrasts layout-nrow=2}
+
+::: {#tbl-results-contrasts-1}
+
+```{r}
+# convert condition into factor
+d$condition <- factor(d$condition, levels = c("control", "disclosure", "disclosure_explanation"))
+d_long$condition <- factor(d_long$condition, levels = c("control", "disclosure", "disclosure_explanation"))
+d_valid$condition <- factor(d_valid$condition, levels = c("control", "disclosure", "disclosure_explanation"))
+
+# fluency contrast (quality ratings) per condition
+contrast_control <- d_valid$fluency_contrast_rating[d_valid$condition == "control"]
+contrast_disclosure <- d_valid$fluency_contrast_rating[d_valid$condition == "disclosure"]
+contrast_explanation <- d_valid$fluency_contrast_rating[d_valid$condition == "disclosure_explanation"]
+
+# one-sided test (control condition)
+contrast_tbl(contrast_control, alternative = "greater") |>
+  mutate(Condition = "Control") |>
+  select(Condition, N, Mean, SD, CI, test_statistic, p, d) |>
+  kbl(col.names = c("Condition", "N", "Mean", "SD", "95% CI", "t-test", "p (one-sided)", "Cohen's d<sub>z</sub>"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(5, 6), extra_css = "white-space: nowrap;")
+```
+
+Control condition (one-sided test)
+:::
+
+::: {#tbl-results-contrasts-2}
+
+```{r}
+# two-sided test and Bayes factor (disclosure condition)
+bf10_h2 <- BayesFactor::extractBF(
+  BayesFactor::ttestBF(x = contrast_disclosure, mu = 0, rscale = 0.707))$bf
+
+contrast_tbl(contrast_disclosure, alternative = "two.sided") |>
+  mutate(Condition = "Disclosure", BF = bf_fmt(bf10_h2)) |>
+  select(Condition, N, Mean, SD, CI, test_statistic, p, d, BF) |>
+  kbl(col.names = c("Condition", "N", "Mean", "SD", "95% CI", "t-test", "p (two-sided)", "Cohen's d<sub>z</sub>", "BF<sub>10</sub>"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(5, 6), extra_css = "white-space: nowrap;")
+
+# 90% confidence interval and equivalence test (disclosure condition; for the text below)
+ci90_h2 <- t.test(contrast_disclosure, conf.level = .90)$conf.int
+equivalence_h2 <- t.test(contrast_disclosure, mu = -eq_bound, alternative = "greater")$p.value < .05 &
+  t.test(contrast_disclosure, mu = eq_bound, alternative = "less")$p.value < .05
+# secondary test: Welch ANOVA across the three conditions (for the text below)
+welch_anova <- oneway.test(fluency_contrast_rating ~ condition, data = d_valid, var.equal = FALSE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* `r bf_note(bf10_h2, "a fluency contrast different from zero")`
+:::
+
+Disclosure condition (two-sided test)
+:::
+
+Preregistered one-sample t-tests of the fluency contrast (in rating points)
+:::
+
+In addition, we preregistered an equivalence test for the disclosure condition, that is, two one-sided tests at α = .05 against the bounds of -0.225 and +0.225 rating points. Equivalence is concluded if both one-sided tests are significant, which is the same as the 90% confidence interval lying inside the bounds. @tbl-results-h2-1 shows the results of this equivalence test. The 90% confidence interval of the fluency contrast in the disclosure condition is [`r weights::rd(ci90_h2[1], 2)`, `r weights::rd(ci90_h2[2], 2)`]. Hence, equivalence is `r ifelse(equivalence_h2, "established", "not established")`. Moreover, @tbl-results-h2-2 shows the preregistered comparisons between the conditions (Welch t-tests on the fluency contrast): the comparison of the control and the disclosure condition (two-sided), which is part of the decision rule below, and the comparison of the two disclosure conditions, that is, whether the added explanation reduces the fluency contrast compared to disclosure alone (one-sided). As a secondary test, a Welch ANOVA across all three conditions yielded F(`r welch_anova$parameter[1]`, `r weights::rd(welch_anova$parameter[2], 1)`) = `r sprintf('%.2f', welch_anova$statistic)`, p = `r weights::rd(welch_anova$p.value, 3)`.
+
+::: {#tbl-results-h2 layout-nrow=2}
+
+::: {#tbl-results-h2-1}
+
+```{r}
+# equivalence test (TOST)
+tost_tbl(contrast_disclosure, bound = eq_bound) |>
+  kbl(col.names = c("One-Sided Test", "t-test", "p (one-sided)"), escape = FALSE) |>
+  kable_styling()
+```
+
+Equivalence test (TOST) of the fluency contrast in the disclosure condition (bounds of ±0.225 rating points)
+:::
+
+::: {#tbl-results-h2-2}
+
+```{r}
+# comparisons between conditions
+# --Note: control vs. disclosure is tested two-sided, disclosure vs. disclosure
+#         plus explanation one-sided (first > second)
+temp <- bind_rows(
+  welch_tbl(contrast_control, contrast_disclosure, alternative = "two.sided"),
+  welch_tbl(contrast_disclosure, contrast_explanation, alternative = "greater")
+)
+temp$p_two_sided <- c(temp$p[1], NA)
+temp$p_one_sided <- c(NA, temp$p[2])
+temp |>
+  mutate(Comparison = c("Control vs. disclosure", "Disclosure vs. disclosure + explanation")) |>
+  select(Comparison, N_1, N_2, Mean_1, Mean_2, test_statistic, p_two_sided, p_one_sided, d) |>
+  kbl(col.names = c("Comparison", "N (First)", "N (Second)", "Mean (First)", "Mean (Second)", "t-test",
+                    "p (two-sided)", "p (one-sided, first > second)", "Cohen's d"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(6, extra_css = "white-space: nowrap;")
+
+# preregistered decision rule for the disclosure condition (see below)
+decision_h2 <- h2_decision(contrast_disclosure, contrast_control)
+```
+
+Comparisons of the fluency contrast between conditions (Welch t-tests)
+:::
+
+Equivalence test and comparisons between conditions
+:::
+
+The preregistered decision rule for the disclosure condition was as follows:
+
+1. The fluency contrast is significantly negative with the estimate at or beyond the bound (-0.225): overcorrection.
+2. The fluency contrast is significantly positive with the estimate at least 0.225: persistence supported.
+3. Equivalence passes and the comparison of the control and the disclosure condition is significant with the fluency contrast being higher in the control condition: switched off (any significant effect remaining inside the bound is reported as such, in either direction).
+4. The fluency contrast is significantly positive but below 0.225 without passing equivalence: reduced but present.
+5. Otherwise: indeterminate.
+
+Applying this decision rule to the results above yields case `r h2_step(decision_h2)` (`r h2_outcome(decision_h2)`). @fig-decision shows which case other estimates would have yielded.
+
+
+## Further preregistered measures {#sec-further}
+
+As preregistered, the two further measures (factual recovery and investment allocation) were estimated in the disclosure condition. The same quantities in the other conditions are exploratory (unless noted otherwise). In addition, we preregistered a check of the participants' beliefs about the informativeness of the design.
+
+### Factual recovery
+
+After each deck, participants answered one four-option question about a substantive fact of the startup. We estimated a mixed logistic regression that predicts a correct answer by visual fluency and substantive quality, with random intercepts for participants and startups. As preregistered, only the fluency effect is interpreted, and the preregistered test concerns the disclosure condition. The models for the other two conditions are exploratory. Both factors were effect-coded (i.e., `low` as `-1` and `high` as `+1`). With this coding, the difference in log-odds between the high and the low condition is two times the coefficient, and the odds ratio (high vs. low) is thus exp(2 × coefficient). We used the bobyqa optimizer, since the model for the disclosure condition did not converge with the default optimizer. The model for the control condition has a singular fit (i.e., the estimated startup variance is zero). The answers to invalid decks are not included, so that the models are based on all participants with at least one valid deck. @tbl-results-recovery shows the observed share of correct answers per condition and fluency level, together with the fluency effect in the mixed logistic regressions.
+
+::: {#tbl-results-recovery}
+
+```{r}
+# mixed logistic regressions
+#
+# convert factors and use effect coding
+d_long$fluency <- as.factor(d_long$fluency)
+d_long$quality <- as.factor(d_long$quality)
+d_long$ID <- as.factor(d_long$ID)
+d_long$venture <- as.factor(d_long$venture)
+contrasts(d_long$fluency) <- contr.sum # high = 1, low = -1
+contrasts(d_long$quality) <- contr.sum # high = 1, low = -1
+
+# answers to valid decks per condition
+d_rec_control <- d_long |> filter(condition == "control" & !is.na(recovery_correct))
+d_rec_disclosure <- d_long |> filter(condition == "disclosure" & !is.na(recovery_correct))
+d_rec_explanation <- d_long |> filter(condition == "disclosure_explanation" & !is.na(recovery_correct))
+
+# control condition (exploratory)
+m_rec_control <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                             data = d_rec_control,
+                             family = binomial,
+                             control = lme4::glmerControl(optimizer = "bobyqa"))
+# disclosure condition (preregistered)
+m_rec_disclosure <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                                data = d_rec_disclosure,
+                                family = binomial,
+                                control = lme4::glmerControl(optimizer = "bobyqa"))
+# disclosure plus explanation condition (exploratory)
+m_rec_explanation <- lme4::glmer(recovery_correct ~ fluency + quality + (1 | ID) + (1 | venture),
+                                 data = d_rec_explanation,
+                                 family = binomial,
+                                 control = lme4::glmerControl(optimizer = "bobyqa"))
+
+# observed share of correct answers and fluency effect per condition
+bind_rows(
+  recovery_tbl(m_rec_control, d_rec_control$recovery_correct, d_rec_control$fluency),
+  recovery_tbl(m_rec_disclosure, d_rec_disclosure$recovery_correct, d_rec_disclosure$fluency),
+  recovery_tbl(m_rec_explanation, d_rec_explanation$recovery_correct, d_rec_explanation$fluency)
+) |>
+  kbl(col.names = c("Outcome", "Fluency Condition", "N", "% Correct", "z-test", "p (two-sided)", "Odds Ratio (High vs. Low)"),
+      escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Control (Exploratory)" = 2, "Disclosure (Preregistered)" = 2,
+                      "Disclosure + Explanation (Exploratory)" = 2),
+            label_row_css = "text-align: center;")
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Test statistics, p-values (two-sided), and odds ratios (high vs. low fluency, i.e., exp(2 × coefficient)) from mixed logistic regressions per condition with visual fluency and substantive quality as predictors and random intercepts for participants and startups. The models are based on `r scales::comma(nobs(m_rec_control))` answers from `r lme4::ngrps(m_rec_control)[["ID"]]` participants (control), `r scales::comma(nobs(m_rec_disclosure))` answers from `r lme4::ngrps(m_rec_disclosure)[["ID"]]` participants (disclosure), and `r scales::comma(nobs(m_rec_explanation))` answers from `r lme4::ngrps(m_rec_explanation)[["ID"]]` participants (disclosure plus explanation), each across `r lme4::ngrps(m_rec_disclosure)[["venture"]]` startups.
+:::
+
+Factual recovery
+:::
+
+### Investment allocation
+
+As preregistered, we computed the fluency contrast on the allocated units (i.e., the mean units of the two high fluency decks minus the mean units of the two low fluency decks) and tested it against zero in the control condition (one-sided, positive) and in the disclosure condition (two-sided). Since the preregistration considered the allocation too noisy for an equivalence test at this sample size, a non-significant estimate in the disclosure condition should be interpreted as such, not as evidence that the effect is absent. @tbl-results-allocation shows the results, together with the (exploratory) test in the disclosure plus explanation condition.
+
+```{r}
+#| label: tbl-results-allocation
+#| tbl-cap: 'One-sample t-tests of the fluency contrast on the investment allocation (in units out of 100)'
+
+# fluency contrast (allocation) per condition
+allocation_control <- d_valid$fluency_contrast_allocation[d_valid$condition == "control"]
+allocation_disclosure <- d_valid$fluency_contrast_allocation[d_valid$condition == "disclosure"]
+allocation_explanation <- d_valid$fluency_contrast_allocation[d_valid$condition == "disclosure_explanation"]
+
+# --Note: control one-sided (positive), the other conditions two-sided
+temp <- bind_rows(
+  contrast_tbl(allocation_control, alternative = "greater"),
+  contrast_tbl(allocation_disclosure, alternative = "two.sided"),
+  contrast_tbl(allocation_explanation, alternative = "two.sided")
+)
+temp$p_one_sided <- c(temp$p[1], NA, NA)
+temp$p_two_sided <- c(NA, temp$p[2], temp$p[3])
+temp |>
+  mutate(Condition = c("Control", "Disclosure", "Disclosure + explanation"),
+         Test = c("Preregistered", "Preregistered", "Exploratory")) |>
+  select(Condition, Test, N, Mean, SD, CI, test_statistic, p_one_sided, p_two_sided, d) |>
+  kbl(col.names = c("Condition", "Test", "N", "Mean", "SD", "95% CI", "t-test", "p (one-sided)", "p (two-sided)", "Cohen's d<sub>z</sub>"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(6, 7), extra_css = "white-space: nowrap;")
+```
+
+### Belief check
+
+After the investment allocation, participants indicated how much the visual design of the decks had told them about the startups' quality (belief item 1) and about their founders' competence (belief item 2), from 1 = nothing at all to 7 = a great deal. As preregistered, we tested whether disclosure lowered the belief that the design was informative about the startups' quality, using a Welch t-test on belief item 1 (disclosure vs. control, one-sided, disclosure lower). A signaling interpretation of the result in the disclosure condition requires that disclosure lowered this belief. If the test is not significant, the fluency estimate is reported, but the signaling test is inconclusive. In addition, we compared belief item 2 between the disclosure and the control condition with a Welch t-test (two-sided). This second test was not preregistered and is exploratory. For consistency with the confirmatory tests, we used the analyzable sample. @tbl-results-belief-1 shows the mean beliefs per condition, and @tbl-results-belief-2 shows the results of the two tests.
+
+::: {#tbl-results-belief layout-nrow=2}
+
+::: {#tbl-results-belief-1}
+
+```{r}
+# mean beliefs per condition
+d_valid |> group_by(condition) |>
+  summarize(N = n(), m_quality = mean(belief_quality), sd_quality = sd(belief_quality),
+            m_founders = mean(belief_founders), sd_founders = sd(belief_founders)) |>
+  mutate(condition = c("Control", "Disclosure", "Disclosure + explanation")) |>
+  kbl(digits = 2, col.names = c("Condition", "N", "Mean", "SD", "Mean", "SD")) |>
+  kable_styling() |>
+  add_header_above(c(" " = 2, "Item 1: Venture Quality" = 2, "Item 2: Founders' Competence" = 2))
+```
+
+Mean beliefs per condition
+:::
+
+::: {#tbl-results-belief-2}
+
+```{r}
+# belief check (Welch t-tests, disclosure vs. control)
+# --Note: belief item 1 as preregistered (one-sided: disclosure lower), belief
+#         item 2 exploratory (two-sided)
+belief_control <- d_valid$belief_quality[d_valid$condition == "control"]
+belief_disclosure <- d_valid$belief_quality[d_valid$condition == "disclosure"]
+belief_founders_control <- d_valid$belief_founders[d_valid$condition == "control"]
+belief_founders_disclosure <- d_valid$belief_founders[d_valid$condition == "disclosure"]
+
+temp <- bind_rows(
+  welch_tbl(belief_disclosure, belief_control, alternative = "less"),
+  welch_tbl(belief_founders_disclosure, belief_founders_control, alternative = "two.sided")
+)
+temp$p_one_sided <- c(temp$p[1], NA)
+temp$p_two_sided <- c(NA, temp$p[2])
+temp |>
+  mutate(Item = c("Item 1: Venture quality", "Item 2: Founders' competence"),
+         Test = c("Preregistered", "Exploratory")) |>
+  select(Item, Test, N_1, N_2, Mean_1, Mean_2, test_statistic, p_one_sided, p_two_sided, d) |>
+  kbl(col.names = c("Belief Item", "Test", "N (Disclosure)", "N (Control)", "Mean (Disclosure)", "Mean (Control)", "t-test",
+                    "p (one-sided)", "p (two-sided)", "Cohen's d"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(7, extra_css = "white-space: nowrap;")
+```
+
+Belief check (Welch t-tests, disclosure vs. control)
+:::
+
+Beliefs about the informativeness of the visual design (1–7)
+:::
+
+
+## Manipulation checks {#sec-mc}
+
+In this section, we report the results of the manipulation checks for visual fluency and substantive quality. As preregistered, they use the control condition only. At the end of the experiment, participants rated each deck with respect to how easy it had been to study the pitch deck (processing ease, from 0 = difficult to 100 = easy) and the startup's potential irrespective of the pitch deck's visual design (perceived venture quality, from 1 = very poor to 7 = excellent). Since the observation-level exclusions only apply to the deck-level dependent variables, the manipulation checks use all decks of all participants in the control condition.
+
+As preregistered, we estimated two mixed-effects models, one that predicts processing ease by visual fluency and one that predicts perceived venture quality by substantive quality, both with random intercepts for participants and startups and with effect coding (i.e., `low` as `-1` and `high` as `+1`). For processing ease and perceived venture quality, @tbl-results-mc-1 and @tbl-results-mc-2 show the observed (i.e., not model-based) mean ratings per condition, together with the test of the respective factor in the mixed-effects model (Satterthwaite's degrees of freedom) and a standardized effect size.
+
+::: {#tbl-results-mc layout-nrow=2}
+
+::: {#tbl-results-mc-1}
+
+```{r}
+# control condition only (as preregistered)
+d_long_control <- d_long |> filter(condition == "control")
+
+# mixed-effects models
+#
+# processing ease (called felt ease in the preregistration; 0-100 slider)
+m_mc_fluency <- lmerTest::lmer(ease ~ fluency + (1 | ID) + (1 | venture), d_long_control)
+# perceived quality (1-7 scale), all decks
+m_mc_quality <- lmerTest::lmer(rating_all ~ quality + (1 | ID) + (1 | venture), d_long_control)
+
+# processing ease
+mc_tbl(m_mc_fluency, "fluency1", d_long_control$ease, d_long_control$fluency, "Processing ease") |>
+  kbl(col.names = c("Outcome", "Fluency Condition", "N", "Mean", "SD", "t-test", "p (two-sided)", "Cohen's d"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(6, extra_css = "white-space: nowrap;")
+```
+
+Processing ease
+:::
+
+::: {#tbl-results-mc-2}
+
+```{r}
+# perceived quality
+mc_tbl(m_mc_quality, "quality1", d_long_control$rating_all, d_long_control$quality, "Perceived venture quality") |>
+  kbl(col.names = c("Outcome", "Quality Condition", "N", "Mean", "SD", "t-test", "p (two-sided)", "Cohen's d"),
+      escape = FALSE) |>
+  kable_styling() |>
+  column_spec(6, extra_css = "white-space: nowrap;")
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Test statistics, p-values (two-sided), and effect sizes from mixed-effects models with random intercepts for participants and startups (`r scales::comma(nobs(m_mc_fluency))` ratings from `r lme4::ngrps(m_mc_fluency)[["ID"]]` participants across `r lme4::ngrps(m_mc_fluency)[["venture"]]` startups per model). Cohen's d is the model-based difference between the high and the low condition, divided by the square root of the sum of the variance components (Westfall et al., 2014).
+:::
+
+Perceived venture quality
+:::
+
+Manipulation checks (control condition)
+:::
+
+<!--
+With effect coding, the coefficient of the manipulated factor is half the difference between the high and the low condition. The model-based difference is thus `r sprintf('%.2f', 2 * lme4::fixef(m_mc_fluency)["fluency1"])` rating points for processing ease and `r sprintf('%.2f', 2 * lme4::fixef(m_mc_quality)["quality1"])` rating points for perceived quality.
+-->
+
+
+## Sensitivity analyses {#sec-sensitivity}
+
+As preregistered, we re-estimated the analyses of the disclosure condition (a) excluding participants who needed all three attempts to answer the comprehension questions about their instruction message (including those who failed all three attempts), and (b) excluding participants who answered anything other than "No" to the question whether they had formed a guess about what we were testing. In the analyzable sample, `r sum(d_valid$comprehension_attempts == 3)` participants needed three attempts (control: `r sum(d_valid$comprehension_attempts[d_valid$condition == "control"] == 3)`; disclosure: `r sum(d_valid$comprehension_attempts[d_valid$condition == "disclosure"] == 3)`; disclosure plus explanation: `r sum(d_valid$comprehension_attempts[d_valid$condition == "disclosure_explanation"] == 3)`), and `r sum(d_valid$suspicion_probe != "No")` participants answered *Yes* or *Maybe a little* to the question whether they had formed a guess. The exclusions were applied to all conditions, so that the comparison of the control and the disclosure condition in the decision rule uses the same reduced sample. @tbl-results-sensitivity shows the results for the disclosure condition, next to the results for the full analyzable sample.
+
+::: {#tbl-results-sensitivity}
+
+```{r}
+# (a) excluding participants who needed all three instruction attempts
+d_sens_1 <- d_valid |> filter(comprehension_attempts < 3)
+sens_1_control <- d_sens_1$fluency_contrast_rating[d_sens_1$condition == "control"]
+sens_1_disclosure <- d_sens_1$fluency_contrast_rating[d_sens_1$condition == "disclosure"]
+# (b) excluding participants who reported a hypothesis guess
+d_sens_2 <- d_valid |> filter(suspicion_probe == "No")
+sens_2_control <- d_sens_2$fluency_contrast_rating[d_sens_2$condition == "control"]
+sens_2_disclosure <- d_sens_2$fluency_contrast_rating[d_sens_2$condition == "disclosure"]
+
+# estimate, 95% CI, Bayes factor, equivalence test, comparison with the control
+# condition, and decision rule
+#
+# full analyzable sample
+bf_full <- BayesFactor::extractBF(BayesFactor::ttestBF(x = contrast_disclosure, mu = 0, rscale = 0.707))$bf
+ci95_full <- t.test(contrast_disclosure)$conf.int
+ci90_full <- t.test(contrast_disclosure, conf.level = .90)$conf.int
+p_zero_full <- t.test(contrast_disclosure)$p.value
+p_comp_full <- t.test(contrast_control, contrast_disclosure, var.equal = FALSE)$p.value
+# (a)
+bf_sens_1 <- BayesFactor::extractBF(BayesFactor::ttestBF(x = sens_1_disclosure, mu = 0, rscale = 0.707))$bf
+ci95_sens_1 <- t.test(sens_1_disclosure)$conf.int
+ci90_sens_1 <- t.test(sens_1_disclosure, conf.level = .90)$conf.int
+p_zero_sens_1 <- t.test(sens_1_disclosure)$p.value
+p_comp_sens_1 <- t.test(sens_1_control, sens_1_disclosure, var.equal = FALSE)$p.value
+# (b)
+bf_sens_2 <- BayesFactor::extractBF(BayesFactor::ttestBF(x = sens_2_disclosure, mu = 0, rscale = 0.707))$bf
+ci95_sens_2 <- t.test(sens_2_disclosure)$conf.int
+ci90_sens_2 <- t.test(sens_2_disclosure, conf.level = .90)$conf.int
+p_zero_sens_2 <- t.test(sens_2_disclosure)$p.value
+# decision rule
+decision_sens_1 <- h2_decision(sens_1_disclosure, sens_1_control)
+decision_sens_2 <- h2_decision(sens_2_disclosure, sens_2_control)
+p_comp_sens_2 <- t.test(sens_2_control, sens_2_disclosure, var.equal = FALSE)$p.value
+
+data.frame(
+  Sample = c("Full analyzable sample", "(a) Without participants who needed three instruction attempts",
+             "(b) Without participants who reported a hypothesis guess"),
+  N = c(length(contrast_disclosure), length(sens_1_disclosure), length(sens_2_disclosure)),
+  Mean = weights::rd(c(mean(contrast_disclosure), mean(sens_1_disclosure), mean(sens_2_disclosure)), 2),
+  CI95 = c(paste0("[", weights::rd(ci95_full[1], 2), ", ", weights::rd(ci95_full[2], 2), "]"),
+           paste0("[", weights::rd(ci95_sens_1[1], 2), ", ", weights::rd(ci95_sens_1[2], 2), "]"),
+           paste0("[", weights::rd(ci95_sens_2[1], 2), ", ", weights::rd(ci95_sens_2[2], 2), "]")),
+  p_zero = ifelse(c(p_zero_full, p_zero_sens_1, p_zero_sens_2) < .001, " &lt; .001",
+                  weights::rd(c(p_zero_full, p_zero_sens_1, p_zero_sens_2), 3)),
+  BF = bf_fmt(c(bf_full, bf_sens_1, bf_sens_2)),
+  CI90 = c(paste0("[", weights::rd(ci90_full[1], 2), ", ", weights::rd(ci90_full[2], 2), "]"),
+           paste0("[", weights::rd(ci90_sens_1[1], 2), ", ", weights::rd(ci90_sens_1[2], 2), "]"),
+           paste0("[", weights::rd(ci90_sens_2[1], 2), ", ", weights::rd(ci90_sens_2[2], 2), "]")),
+  Equivalence = ifelse(c(ci90_full[1] > -eq_bound & ci90_full[2] < eq_bound,
+                         ci90_sens_1[1] > -eq_bound & ci90_sens_1[2] < eq_bound,
+                         ci90_sens_2[1] > -eq_bound & ci90_sens_2[2] < eq_bound), "yes", "no"),
+  p_comp = weights::rd(c(p_comp_full, p_comp_sens_1, p_comp_sens_2), 3),
+  Decision = paste0("Case ", h2_step(c(decision_h2, decision_sens_1, decision_sens_2)),
+                    " (", h2_outcome(c(decision_h2, decision_sens_1, decision_sens_2)), ")")
+) |>
+  kbl(col.names = c("Sample", "N", "Mean", "95% CI", "p (two-sided)", "BF<sub>10</sub>", "90% CI", "Equivalence",
+                    "p (Control vs. Disclosure, two-sided)", "Decision Rule"),
+      escape = FALSE, align = "lccccccccc") |>
+  kable_styling() |>
+  column_spec(c(4, 7), extra_css = "white-space: nowrap;")
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Interpretation of BF<sub>10</sub> (classification of Lee & Wagenmakers, 2013): `r bf_label(bf_full)` in the full analyzable sample, `r bf_label(bf_sens_1)` in (a), and `r bf_label(bf_sens_2)` in (b).
+:::
+
+Sensitivity analyses: Fluency contrast (in rating points) in the disclosure condition
+:::
+
+
+## Exploratory analyses {#sec-exploratory}
+
+As preregistered, we explored (a) the fluency × quality interaction on the quality ratings and on the allocated units, including whether the added explanation (disclosure plus explanation vs. disclosure) changes it, and (b) order and position effects. Since no directions were preregistered, all tests are two-sided. All models are mixed-effects models with random intercepts for participants and startups, the factors are effect-coded (i.e., `low` as `-1` and `high` as `+1`; for the comparison of the two disclosure conditions, `disclosure` as `+1` and `disclosure_explanation` as `-1`; for the halves, `first` as `+1` and `second` as `-1`; for the sequences, `hq_first` (high quality decks first) as `+1` and `lq_first` as `-1`), and invalid decks are not included. With effect coding, the coefficient of a two-way interaction is a quarter of the corresponding difference of differences (e.g., the fluency effect at high quality minus the fluency effect at low quality), and the coefficient of a three-way interaction is an eighth of the corresponding difference (e.g., this difference of differences in the disclosure condition minus that in the disclosure plus explanation condition). The tables therefore also report these differences (i.e., four or eight times the coefficient) with their 95% confidence intervals, as well as the number of observations and participants of each model.
+
+@tbl-results-interaction shows the fluency × quality interactions per condition and the three-way interaction that tests whether the fluency × quality interaction differs between the two disclosure conditions, for the quality ratings (@tbl-results-interaction-1) and for the allocated units (@tbl-results-interaction-2). The models for the allocated units have a singular fit: since the allocations of every participant add up to 100, the participant intercepts have a variance of zero. The fixed effects are not affected by this.
+
+::: {#tbl-results-interaction layout-nrow=2}
+
+::: {#tbl-results-interaction-1}
+
+```{r}
+# data for the comparison of the two disclosure conditions (effect coding)
+d_long_act <- d_long |> filter(condition %in% c("disclosure", "disclosure_explanation")) |>
+  mutate(condition = droplevels(condition))
+contrasts(d_long_act$condition) <- contr.sum # disclosure = 1, disclosure_explanation = -1
+
+# quality ratings: mixed-effects models
+m_int_rating_control <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                       d_long |> filter(condition == "control"))
+m_int_rating_disclosure <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                          d_long |> filter(condition == "disclosure"))
+m_int_rating_explanation <- lmerTest::lmer(rating ~ fluency * quality + (1 | ID) + (1 | venture),
+                                           d_long |> filter(condition == "disclosure_explanation"))
+m_int_rating_act <- lmerTest::lmer(rating ~ fluency * quality * condition + (1 | ID) + (1 | venture),
+                                   d_long_act)
+
+# row labels and column names of the tables
+terms_int <- c("Fluency × quality (control)", "Fluency × quality (disclosure)",
+               "Fluency × quality (disclosure + explanation)",
+               "Fluency × quality × condition (disclosure vs. disclosure + explanation)")
+cols_int <- c("", "Coeff.", "SE", "Difference", "95% CI", "t-test", "p (two-sided)", "Observations", "Participants")
+
+# quality ratings: table
+# --Note: difference = 4 x coefficient (two-way) or 8 x coefficient (three-way)
+bind_rows(
+  lmer_coef_tbl(m_int_rating_control, "fluency1:quality1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_int_rating_disclosure, "fluency1:quality1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_int_rating_explanation, "fluency1:quality1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_int_rating_act, "fluency1:quality1:condition1", multiplier = 8, coef_digits = 3)
+) |>
+  mutate(term = terms_int) |>
+  select(term, estimate, std.error, difference, ci, test_statistic, p, observations, participants) |>
+  kbl(col.names = cols_int, escape = FALSE, align = "lcccccccc") |>
+  kable_styling() |>
+  column_spec(c(5, 6), extra_css = "white-space: nowrap;") |>
+  row_spec(c(0,3), extra_css = "border-bottom: 1px solid")
+```
+
+Quality ratings (1–7)
+:::
+
+::: {#tbl-results-interaction-2}
+
+```{r}
+# capital allocation: mixed-effects models
+m_int_alloc_control <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                      d_long |> filter(condition == "control"))
+m_int_alloc_disclosure <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                         d_long |> filter(condition == "disclosure"))
+m_int_alloc_explanation <- lmerTest::lmer(allocation ~ fluency * quality + (1 | ID) + (1 | venture),
+                                          d_long |> filter(condition == "disclosure_explanation"))
+m_int_alloc_act <- lmerTest::lmer(allocation ~ fluency * quality * condition + (1 | ID) + (1 | venture),
+                                  d_long_act)
+
+# capital allocation: table
+bind_rows(
+  lmer_coef_tbl(m_int_alloc_control, "fluency1:quality1", multiplier = 4),
+  lmer_coef_tbl(m_int_alloc_disclosure, "fluency1:quality1", multiplier = 4),
+  lmer_coef_tbl(m_int_alloc_explanation, "fluency1:quality1", multiplier = 4),
+  lmer_coef_tbl(m_int_alloc_act, "fluency1:quality1:condition1", multiplier = 8)
+) |>
+  mutate(term = terms_int) |>
+  select(term, estimate, std.error, difference, ci, test_statistic, p, observations, participants) |>
+  kbl(col.names = cols_int, escape = FALSE, align = "lcccccccc") |>
+  kable_styling() |>
+  column_spec(c(5, 6), extra_css = "white-space: nowrap;") |>
+  row_spec(c(0,3), extra_css = "border-bottom: 1px solid")
+```
+
+Investment allocation (in units)
+:::
+
+Exploratory analysis: Fluency × quality interactions (mixed-effects models)
+:::
+
+@tbl-results-order shows the order and position effects on the quality ratings. First, we tested whether the quality rating depends on the position in which a deck was viewed (1–4) or on the position of its rating page (1–4), controlling for fluency and quality (all conditions; positions as factors; type III tests with Satterthwaite's degrees of freedom; @tbl-results-order-1). Second, we tested whether the fluency effect differs between the decks viewed before and after the midway reminder (per condition, since the reminder differed between the conditions) and between the two rotation sequences (i.e., high quality decks first vs. low quality decks first; all conditions; @tbl-results-order-2). Here, the column `Difference` is the fluency effect in the first half minus that in the second half (or in the sequence with the high quality decks first minus that in the sequence with the low quality decks first).
+
+::: {#tbl-results-order layout-nrow=2}
+
+::: {#tbl-results-order-1}
+
+```{r}
+# convert factors and use effect coding
+d_long$half <- as.factor(d_long$half)
+d_long$sequence <- as.factor(d_long$sequence)
+contrasts(d_long$half) <- contr.sum     # first = 1, second = -1
+contrasts(d_long$sequence) <- contr.sum # hq_first = 1, lq_first = -1
+
+# (a) position effects (all conditions)
+m_position <- lmerTest::lmer(rating ~ fluency + quality + factor(position) +
+                               factor(rating_position) + (1 | ID) + (1 | venture),
+                             d_long)
+temp <- anova(m_position)[c("factor(position)", "factor(rating_position)"), ]
+data.frame(
+  term = c("Viewing position of the deck (1–4)", "Position of the rating page (1–4)"),
+  test_statistic = paste0("F(", temp$NumDF, ", ", sprintf('%.1f', temp$DenDF), ") = ", sprintf('%.2f', temp$`F value`)),
+  p = ifelse(temp$`Pr(>F)` < .001, " &lt; .001", weights::rd(temp$`Pr(>F)`, 3))
+) |>
+  kbl(col.names = c("", "F-test", "p"), escape = FALSE) |>
+  kable_styling()
+```
+
+Position effects
+:::
+
+::: {#tbl-results-order-2}
+
+```{r}
+# (b) fluency effect by half (per condition) and by rotation sequence (all conditions)
+m_half_control <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                 d_long |> filter(condition == "control"))
+m_half_disclosure <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                    d_long |> filter(condition == "disclosure"))
+m_half_explanation <- lmerTest::lmer(rating ~ fluency * half + quality + (1 | ID) + (1 | venture),
+                                     d_long |> filter(condition == "disclosure_explanation"))
+m_sequence <- lmerTest::lmer(rating ~ fluency * sequence + quality + (1 | ID) + (1 | venture),
+                             d_long)
+
+bind_rows(
+  lmer_coef_tbl(m_half_control, "fluency1:half1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_half_disclosure, "fluency1:half1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_half_explanation, "fluency1:half1", multiplier = 4, coef_digits = 3),
+  lmer_coef_tbl(m_sequence, "fluency1:sequence1", multiplier = 4, coef_digits = 3)
+) |>
+  mutate(term = c("Fluency × half (control)", "Fluency × half (disclosure)",
+                  "Fluency × half (disclosure + explanation)", "Fluency × sequence (all conditions)")) |>
+  select(term, estimate, std.error, difference, ci, test_statistic, p, observations, participants) |>
+  kbl(col.names = c("", "Coeff.", "SE", "Difference", "95% CI", "t-test", "p (two-sided)", "Observations", "Participants"),
+      escape = FALSE, align = "lcccccccc") |>
+  kable_styling() |>
+  column_spec(c(5, 6), extra_css = "white-space: nowrap;") |>
+  row_spec(c(0,3), extra_css = "border-bottom: 1px solid")
+```
+
+Fluency effect by half and by rotation sequence
+:::
+
+Exploratory analysis: Order and position effects on the quality ratings (mixed-effects models)
+:::
+
+
+# Plots {#sec-plots}
+
+@fig-main summarizes the key results: for each instruction condition, it shows the fluency contrasts on the perceived venture quality ratings and on the investment allocation, together with the mean beliefs about the informativeness of the design (belief check). @fig-contrast shows the fluency contrast on the perceived venture quality ratings by condition in detail, including the preregistered equivalence bounds, and @fig-decision shows which case of the preregistered decision rule for the disclosure condition an estimate would yield. @fig-ratings shows the mean quality ratings per condition and experimental cell, where significance brackets represent post-hoc contrasts (two-sided paired t-tests) with Holm (1979) correction, and @fig-recovery shows the results for factual recovery.
+
+```{r}
+#| label: fig-main
+#| fig-cap: Fluency contrasts and beliefs by instruction condition
+#| fig-width: 10
+#| fig-asp: 0.6
+#| out-width: 100%
+
+# Helper functions and aesthetics
+#
+# pval function
+pval <- function(p, stars = TRUE){
+  if(stars){
+    if(p < .001) return("***")
+    if(p < .01) return("**")
+    if(p < .05) return("*")
+    if(p >= .05) return("NS")
+  } else{
+    scales::pvalue(p, prefix = c("p < ", "p = ", "p > "))
+  }
+}
+#
+# mean and 95% CI of a participant-level contrast, put together as a data frame
+contrast_ci <- function(x, panel, group){
+  # remove missing values
+  x <- x[!is.na(x)]
+  # perform (two-sided) t-test
+  tres <- t.test(x, mu = 0)
+  # construct return df
+  return(data.frame(panel = panel, group = group, estimate = mean(x),
+                    lower = tres$conf.int[1], upper = tres$conf.int[2]))
+}
+# theme settings
+my_style <- list(hrbrthemes::theme_ipsum_rc(),
+                 scale_fill_manual(values=c(blue_light, blue_dark)))
+my_theme <- theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = .5),
+        axis.title.y = element_text(size = 12, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 12, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        )
+
+
+# data prep
+#
+# panel titles and groups
+panels_contrast <- c("<b>Perceived venture quality</b><br><span style='color:gray45'>rating points (1–7 scale)</span>",
+                     "<b>Allocation</b><br><span style='color:gray45'>units out of 100</span>")
+groups <- c("Control", "Disclosure", "Disclosure +\nexplanation")
+
+# means and 95% CIs of the fluency contrasts
+d_ci <- bind_rows(
+  # perceived quality ratings
+  contrast_ci(contrast_control, panels_contrast[1], groups[1]),
+  contrast_ci(contrast_disclosure, panels_contrast[1], groups[2]),
+  contrast_ci(contrast_explanation, panels_contrast[1], groups[3]),
+  # allocation
+  contrast_ci(allocation_control, panels_contrast[2], groups[1]),
+  contrast_ci(allocation_disclosure, panels_contrast[2], groups[2]),
+  contrast_ci(allocation_explanation, panels_contrast[2], groups[3])
+)
+d_ci$panel <- factor(d_ci$panel, levels = panels_contrast)
+d_ci$group <- factor(d_ci$group, levels = groups)
+# means and 95% CIs of the belief that the design is informative about the
+# startups' quality
+panel_belief <- "<b>Design informative about quality</b><br><span style='color:gray45'>mean belief (1–7 scale)</span>"
+d_ci_belief <- bind_rows(
+  contrast_ci(d_valid$belief_quality[d_valid$condition == "control"], panel_belief, groups[1]),
+  contrast_ci(d_valid$belief_quality[d_valid$condition == "disclosure"], panel_belief, groups[2]),
+  contrast_ci(d_valid$belief_quality[d_valid$condition == "disclosure_explanation"], panel_belief, groups[3])
+)
+d_ci_belief$group <- factor(d_ci_belief$group, levels = groups)
+
+# preregistered equivalence bounds (only in the panel for the perceived quality ratings)
+d_band <- data.frame(panel = factor(panels_contrast[1], levels = panels_contrast), ymin = -eq_bound, ymax = eq_bound)
+
+# figure: fluency contrasts
+main_1 <- ggplot(d_ci, aes(x = group, y = estimate)) +
+  geom_rect(data = d_band, aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax),
+            fill = "gray85", alpha = .6, color = NA, inherit.aes = FALSE) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(panel), ncol = 2, scales = "free_y") +
+  scale_x_discrete(expand = expansion(add = c(.4, .6))) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  theme(strip.text = element_markdown(size = 11, hjust = .5, lineheight = 1.2),
+        axis.text.x = element_text(size = 10.5),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0)) +
+  labs(x = NULL, y = "Fluency contrast",
+       title = "<b>Fluency contrast</b> (high minus low fluency decks)")
+
+# figure: beliefs
+main_2 <- ggplot(d_ci_belief, aes(x = group, y = estimate)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(panel)) +
+  scale_x_discrete(expand = expansion(add = c(.4, .6))) +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  theme(strip.text = element_markdown(size = 11, hjust = .5, lineheight = 1.2),
+        axis.text.x = element_text(size = 10.5),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0)) +
+  labs(x = NULL, y = "Mean belief",
+       title = "<b>Belief check</b>")
+
+# final (combined) figure
+main_1 + main_2 + plot_layout(widths = c(2.3, 1)) +
+  plot_annotation(
+  title = "<b>Fluency contrasts and beliefs by instruction condition</b>",
+  subtitle = "Means and 95% confidence intervals (Study 4)",
+  caption = paste0("<i>Notes:</i><br>", "The gray band marks the preregistered equivalence bounds for the disclosure condition (±", eq_bound, " rating points). ",
+                   "Analyzable sample (n = ", nrow(d_valid), " participants with four valid decks)."),
+  # --Note: `theme` inside `plot_annotation`, so that the titles of the two
+  #         parts keep their (smaller) size
+  theme = theme(
+    plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+    plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+    plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+)
+```
+
+```{r}
+#| label: fig-contrast
+#| fig-cap: Fluency contrast on the quality ratings by instruction condition, with the preregistered equivalence bounds
+#| fig-width: 10
+#| fig-asp: 0.6
+#| out-width: 100%
+
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+d_contrast <- d_valid
+d_contrast$condition <- factor(d_contrast$condition,
+                               levels = c("control", "disclosure", "disclosure_explanation"),
+                               labels = c("Control", "Disclosure", "Disclosure +\nexplanation"))
+# means, 95% CIs, and 90% CIs per condition
+d_est <- d_contrast |> group_by(condition) |>
+  summarize(mean = mean(fluency_contrast_rating),
+            lower_95 = t.test(fluency_contrast_rating)$conf.int[1],
+            upper_95 = t.test(fluency_contrast_rating)$conf.int[2],
+            lower_90 = t.test(fluency_contrast_rating, conf.level = .90)$conf.int[1],
+            upper_90 = t.test(fluency_contrast_rating, conf.level = .90)$conf.int[2])
+
+# labels that include statistical inference
+p_h1 <- t.test(contrast_control, alternative = "greater")$p.value
+p_comp <- t.test(contrast_control, contrast_disclosure, var.equal = FALSE)$p.value
+p_h3 <- t.test(contrast_disclosure, contrast_explanation, alternative = "greater", var.equal = FALSE)$p.value
+d_est$label <- c(paste0("p", ifelse(p_h1 < .001, " &lt; .001", paste0(" = ", weights::rd(p_h1, 3))), "<br>(one-sided, > 0)"),
+                 paste0("decision rule:<br>case ", h2_step(decision_h2)),
+                 "")
+
+# participants with the same contrast are placed side by side (like a dot
+# plot) instead of jittering them; the width of a row is proportional to its
+# number of participants (widest row = .8 units)
+d_contrast <- d_contrast |> group_by(condition, fluency_contrast_rating) |>
+  mutate(n_tied = n(), rank_tied = row_number()) |> ungroup()
+d_contrast$x_dot <- as.numeric(d_contrast$condition) +
+  (d_contrast$rank_tied - (d_contrast$n_tied + 1) / 2) / max(d_contrast$n_tied) * .8
+
+# figure: participant-level contrasts
+contrast_1 <- ggplot(d_contrast, aes(x = x_dot, y = fluency_contrast_rating)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -eq_bound, ymax = eq_bound,
+           fill = "gray85", alpha = .6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_point(color = "gray40", size = 1.1, alpha = .3, stroke = 0) +
+  stat_summary(aes(x = as.numeric(condition)), color = blue_dark, geom = "errorbar",
+               fun.data = mean_cl_normal, width = .15, linewidth = 1.1) +
+  stat_summary(aes(x = as.numeric(condition)), color = blue_dark, geom = "point", fun = mean, size = 2.5) +
+  scale_x_continuous(breaks = 1:3, labels = levels(d_contrast$condition)) +
+  scale_y_continuous(breaks = seq(-4, 4, 2)) +
+  coord_cartesian(xlim = c(.5, 3.5)) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  labs(x = NULL, y = "Fluency contrast (rating points)",
+       title = "<b>Individual participants</b><br>
+       <span style='color:gray45; font-size:12pt'>(one dot per participant; means with 95% CIs)</span>") +
+  theme(plot.title = element_markdown(face = "plain"))
+
+# figure: estimates with 95% and 90% CIs (zoomed)
+contrast_2 <- ggplot(d_est, aes(x = condition, y = mean)) +
+  # --Note: `geom_blank()` first, so that the x-axis is discrete
+  geom_blank() +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -eq_bound, ymax = eq_bound,
+           fill = "gray85", alpha = .6) +
+  annotate("text", x = .5, y = c(-eq_bound, eq_bound), label = c(paste0("-", eq_bound), paste0("+", eq_bound)),
+           hjust = 0, vjust = c(1.4, -.6), size = 3.5, color = "gray35", family = "Roboto Condensed") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  # 90% CI (thick) and 95% CI (thin)
+  geom_linerange(aes(ymin = lower_90, ymax = upper_90), linewidth = 3, color = blue_main, alpha = .6) +
+  geom_errorbar(aes(ymin = lower_95, ymax = upper_95), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3.5, color = blue_dark) +
+  geom_richtext(aes(label = label), nudge_x = .12, hjust = 0, size = 3.5, color = "gray25",
+                fill = NA, label.color = NA, family = "Roboto Condensed", lineheight = 1.2) +
+  geom_signif(
+    # control vs. disclosure (two-sided)
+    xmin = 1, xmax = 2, y_position = .88, tip_length = .01,
+    annotations = paste0("p = ", weights::rd(p_comp, 3), " (two-sided)"),
+    color = "gray45", vjust = -.5, textsize = 3.5, family = "Roboto Condensed"
+  ) +
+  geom_signif(
+    # disclosure vs. disclosure plus explanation (one-sided)
+    xmin = 2, xmax = 3, y_position = .68, tip_length = .01,
+    annotations = paste0("p = ", weights::rd(p_h3, 3), " (one-sided)"),
+    color = "gray45", vjust = -.5, textsize = 3.5, family = "Roboto Condensed"
+  ) +
+  scale_y_continuous(breaks = seq(-.2, 1, .2)) +
+  coord_cartesian(ylim = c(-.3, 1.12)) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  labs(x = NULL, y = "Fluency contrast (rating points)",
+       title = "<b>Estimates and equivalence bounds</b><br>
+       <span style='color:gray45; font-size:12pt'>(means with 95% CIs and 90% CIs)</span>") +
+  theme(plot.title = element_markdown(face = "plain"))
+
+# final (combined) figure
+contrast_1 + contrast_2 +
+  plot_annotation(
+  title = "<b>Preregistered fluency contrast on the perceived venture quality ratings</b>",
+  subtitle = "Difference between the high and the low fluency decks, by instruction condition (Study 4)",
+  caption = paste0("<i>Notes:</i><br>", "The gray band marks the preregistered equivalence bounds for the disclosure condition (±", eq_bound, " rating points).<br>",
+                   "Right: thin error bars indicate 95% CIs, thick bars 90% CIs ",
+                   "(equivalence requires the 90% CI to lie inside the bounds). ",
+                   "n = ", nrow(d_valid), " participants with four valid decks."),
+) & theme(
+  plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)),
+)
+```
+
+```{r}
+#| label: fig-decision
+#| fig-cap: Preregistered decision rule for the disclosure condition as a function of the estimate
+#| fig-width: 10
+#| fig-asp: 0.5
+#| out-width: 100%
+
+# data prep
+#
+# step of the preregistered decision rule for hypothetical estimates of the
+# fluency contrast in the disclosure condition, holding the standard deviation
+# and the sample size of the disclosure condition and the data of the control
+# condition at their observed values (i.e., the tests of `h2_decision`,
+# computed for a grid of estimates)
+n_disc <- length(contrast_disclosure)
+se_disc <- sd(contrast_disclosure) / sqrt(n_disc)
+grid <- data.frame(estimate = seq(-.6, .6, by = .001))
+# two-sided test against zero
+grid$p_zero <- 2 * pt(-abs(grid$estimate / se_disc), df = n_disc - 1)
+grid$sig_negative <- grid$p_zero < .05 & grid$estimate < 0
+grid$sig_positive <- grid$p_zero < .05 & grid$estimate > 0
+# equivalence test (TOST)
+grid$p_lower <- pt((grid$estimate + eq_bound) / se_disc, df = n_disc - 1, lower.tail = FALSE)
+grid$p_upper <- pt((grid$estimate - eq_bound) / se_disc, df = n_disc - 1, lower.tail = TRUE)
+grid$equivalence <- grid$p_lower < .05 & grid$p_upper < .05
+# control vs. disclosure (Welch t-test, two-sided): control effect higher?
+var_ctrl <- var(contrast_control) / length(contrast_control)
+var_disc <- var(contrast_disclosure) / n_disc
+df_welch <- (var_ctrl + var_disc)^2 /
+  (var_ctrl^2 / (length(contrast_control) - 1) + var_disc^2 / (n_disc - 1))
+grid$p_comparison <- 2 * pt(-abs((mean(contrast_control) - grid$estimate) / sqrt(var_ctrl + var_disc)), df = df_welch)
+grid$control_higher <- grid$p_comparison < .05 & mean(contrast_control) > grid$estimate
+# decision rule (steps in the preregistered order)
+grid$step <- dplyr::case_when(
+  grid$sig_negative & grid$estimate <= -eq_bound ~ 1,
+  grid$sig_positive & grid$estimate >= eq_bound ~ 2,
+  grid$equivalence & grid$control_higher ~ 3,
+  grid$sig_positive & grid$estimate < eq_bound & !grid$equivalence ~ 4,
+  TRUE ~ 5)
+# consecutive grid points with the same step form one segment
+grid$segment <- cumsum(c(1, diff(grid$step) != 0))
+d_steps <- grid |> group_by(segment, step) |>
+  summarize(xmin = max(min(estimate) - .0005, -.6), xmax = min(max(estimate) + .0005, .6)) |> ungroup()
+d_steps$step <- factor(d_steps$step, levels = 1:5,
+                       labels = c("1: overcorrection", "2: persistence supported",
+                                  "3: switched off", "4: reduced but present", "5: indeterminate"))
+# observed estimate with its 95% and 90% CIs
+ci95_disc <- t.test(contrast_disclosure)$conf.int
+ci90_disc <- t.test(contrast_disclosure, conf.level = .90)$conf.int
+d_obs <- data.frame(estimate = mean(contrast_disclosure),
+                    lower_95 = ci95_disc[1], upper_95 = ci95_disc[2],
+                    lower_90 = ci90_disc[1], upper_90 = ci90_disc[2])
+# step at the observed estimate (as a check, the same step as `h2_decision`)
+step_observed <- grid$step[which.min(abs(grid$estimate - d_obs$estimate))]
+
+# plot
+ggplot() +
+  # steps of the decision rule (upper row)
+  geom_rect(data = d_steps, aes(xmin = xmin, xmax = xmax, ymin = 1.75, ymax = 2.45, fill = step)) +
+  geom_text(data = d_steps, aes(x = (xmin + xmax) / 2, y = 2.1, label = as.integer(step)),
+            color = "white", size = 4.5, family = "Roboto Condensed", fontface = "bold") +
+  # equivalence bounds and zero
+  geom_vline(xintercept = c(-eq_bound, eq_bound), linetype = "dashed", color = "gray35", linewidth = .4) +
+  geom_vline(xintercept = 0, linetype = "dotted", color = "gray45", linewidth = .4) +
+  annotate("text", x = c(-eq_bound, eq_bound), y = .5, label = c(paste0("-", eq_bound), paste0("+", eq_bound)),
+           hjust = c(1.1, -.1), size = 3.5, color = "gray35", family = "Roboto Condensed") +
+  # observed estimate (lower row): 90% CI (thick) and 95% CI (thin)
+  geom_linerange(data = d_obs, aes(y = 1, xmin = lower_90, xmax = upper_90), linewidth = 3, color = blue_main, alpha = .6) +
+  geom_errorbar(data = d_obs, aes(y = 1, xmin = lower_95, xmax = upper_95), orientation = "y",
+                width = .15, linewidth = .9, color = blue_dark) +
+  geom_point(data = d_obs, aes(x = estimate, y = 1), size = 3.5, color = blue_dark) +
+  geom_text(data = d_obs, aes(x = estimate, y = 1.35, label = paste0("observed: ", sprintf('%.2f', estimate))),
+            size = 3.8, color = "gray25", family = "Roboto Condensed") +
+  scale_fill_manual(values = c("#D55E00", blue_dark, "#009E73", blue_main, "gray60"), drop = FALSE) +
+  scale_x_continuous(breaks = c(-.6, -.4, -.2, 0, .2, .4, .6), labels = function(x) sprintf("%.1f", x)) +
+  scale_y_continuous(breaks = c(1, 2.1), labels = c("Observed\nestimate", "Case of the\ndecision rule")) +
+  coord_cartesian(xlim = c(-.6, .6), ylim = c(.4, 2.5)) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 11, hjust = 1),
+        legend.position = "bottom", legend.text = element_text(size = 10.5),
+        plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain", hjust = 0),
+        plot.subtitle = element_text(size = 14, family = "Roboto Condensed", hjust = 0),
+        plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10,
+                                    margin = margin(t = 7, r = 0, b = 0, l = 0))) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(x = "Fluency contrast in the disclosure condition (rating points)", y = NULL, fill = NULL,
+       title = "<b>Preregistered decision rule for the disclosure condition</b>",
+       subtitle = "Case that an estimate would yield, given the observed standard error and the control condition (Study 4)",
+       caption = paste0("<i>Notes:</i><br>", "The dashed lines mark the preregistered equivalence bounds (±", eq_bound, " rating points). ",
+                        "Observed estimate: thin error bar = 95% CI, thick bar = 90% CI (n = ", n_disc, ").<br>",
+                        "Cases were computed with the same tests as the decision rule, holding the standard deviation and n of the disclosure condition<br>",
+                        "and the control condition fixed. The observed estimate falls into case ", step_observed, "."))
+```
+
+```{r}
+#| label: fig-ratings
+#| fig-cap: Perceived venture quality ratings by visual fluency and substantive quality in the three instruction conditions
+#| fig-width: 10
+#| fig-asp: 0.6
+#| out-width: 100%
+
+# set up titles, axis names etc.
+my_labs <- labs(
+  x = "Quality",
+  fill = "Fluency"
+)
+
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data (analyzable sample)
+d_rat <- d_long_valid
+# convert fluency and quality to factor vars
+d_rat$fluency <- factor(d_rat$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_rat$quality <- factor(d_rat$quality, levels = c("low", "high"), labels = c("Low", "High"))
+d_rat_ctrl <- d_rat |> filter(condition == "control")
+d_rat_disc <- d_rat |> filter(condition == "disclosure")
+d_rat_expl <- d_rat |> filter(condition == "disclosure_explanation")
+d_ctrl <- d_valid |> filter(condition == "control")
+d_disc <- d_valid |> filter(condition == "disclosure")
+d_expl <- d_valid |> filter(condition == "disclosure_explanation")
+
+# cell means and upper CI bounds (needed for label and bracket positions)
+sum_ctrl <- d_rat_ctrl |> group_by(quality, fluency) |>
+  summarize(mean = mean(rating), upper = ggplot2::mean_cl_normal(rating)$ymax)
+sum_disc <- d_rat_disc |> group_by(quality, fluency) |>
+  summarize(mean = mean(rating), upper = ggplot2::mean_cl_normal(rating)$ymax)
+sum_expl <- d_rat_expl |> group_by(quality, fluency) |>
+  summarize(mean = mean(rating), upper = ggplot2::mean_cl_normal(rating)$ymax)
+# --Note: The significance brackets are placed 0.24 rating points (i.e., 4% of
+#         the 1-7 axis) above the upper CI bound.
+
+
+# FIGURE FOR THE CONTROL CONDITION
+#
+# post-hoc contrasts: high vs. low fluency within each quality level
+# (paired t-tests on the wide data, Holm's correction)
+p_lq <- t.test(d_ctrl$rating_lq_hf, d_ctrl$rating_lq_lf, paired = TRUE)$p.value
+p_hq <- t.test(d_ctrl$rating_hq_hf, d_ctrl$rating_hq_lf, paired = TRUE)$p.value
+temp <- p.adjust(c(p_lq, p_hq), method = "holm")
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[1]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+rating_1 <- ggplot(d_rat_ctrl, aes(x=quality, y=rating, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) +
+  # cell means as labels inside the bars
+  geom_text(data = sum_ctrl,
+            aes(x = quality, y = 1.2, label = sprintf("%.2f", mean), group = fluency,
+                color = fluency),
+            position = position_dodge(.91), vjust = 0, size = 3.8,
+            family = "Roboto Condensed", inherit.aes = FALSE) +
+  scale_color_manual(values = c("gray15", "white"), guide = "none") +
+  my_style + my_theme + my_labs +
+  labs(y = "Perceived venture quality (1–7)",
+       title = paste0("<b>Control</b><br>
+         <span style='color:gray45; font-size:12pt'>(n = ", nrow(d_ctrl), ")</span>")) +
+  theme(plot.title = element_markdown(face = "plain")) +
+  coord_cartesian(ylim = c(1, 7)) +
+  scale_y_continuous(breaks = 1:7) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = max(sum_ctrl$upper[sum_ctrl$quality == "Low"]) + .24,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = max(sum_ctrl$upper[sum_ctrl$quality == "High"]) + .24,
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+# FIGURE FOR THE DISCLOSURE CONDITION
+#
+# post-hoc contrasts: high vs. low fluency within each quality level
+# (paired t-tests on the wide data, Holm's correction)
+p_lq <- t.test(d_disc$rating_lq_hf, d_disc$rating_lq_lf, paired = TRUE)$p.value
+p_hq <- t.test(d_disc$rating_hq_hf, d_disc$rating_hq_lf, paired = TRUE)$p.value
+temp <- p.adjust(c(p_lq, p_hq), method = "holm")
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[1]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+rating_2 <- ggplot(d_rat_disc, aes(x=quality, y=rating, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) +
+  # cell means as labels inside the bars
+  geom_text(data = sum_disc,
+            aes(x = quality, y = 1.2, label = sprintf("%.2f", mean), group = fluency,
+                color = fluency),
+            position = position_dodge(.91), vjust = 0, size = 3.8,
+            family = "Roboto Condensed", inherit.aes = FALSE) +
+  scale_color_manual(values = c("gray15", "white"), guide = "none") +
+  my_style + my_theme + my_labs +
+  labs(y = "Perceived venture quality (1–7)",
+       title = paste0("<b>Disclosure</b><br>
+         <span style='color:gray45; font-size:12pt'>(n = ", nrow(d_disc), ")</span>")) +
+  theme(plot.title = element_markdown(face = "plain")) +
+  coord_cartesian(ylim = c(1, 7)) +
+  scale_y_continuous(breaks = 1:7) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = max(sum_disc$upper[sum_disc$quality == "Low"]) + .24,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = max(sum_disc$upper[sum_disc$quality == "High"]) + .24,
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+# FIGURE FOR THE DISCLOSURE PLUS EXPLANATION CONDITION
+#
+# post-hoc contrasts: high vs. low fluency within each quality level
+# (paired t-tests on the wide data, Holm's correction)
+p_lq <- t.test(d_expl$rating_lq_hf, d_expl$rating_lq_lf, paired = TRUE)$p.value
+p_hq <- t.test(d_expl$rating_hq_hf, d_expl$rating_hq_lf, paired = TRUE)$p.value
+temp <- p.adjust(c(p_lq, p_hq), method = "holm")
+
+# contrast: low quality: high vs. low fluency
+p1 <- temp[1]
+# contrast: high quality: high vs. low fluency
+p2 <- temp[2]
+
+# plot
+rating_3 <- ggplot(d_rat_expl, aes(x=quality, y=rating, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) +
+  # cell means as labels inside the bars
+  geom_text(data = sum_expl,
+            aes(x = quality, y = 1.2, label = sprintf("%.2f", mean), group = fluency,
+                color = fluency),
+            position = position_dodge(.91), vjust = 0, size = 3.8,
+            family = "Roboto Condensed", inherit.aes = FALSE) +
+  scale_color_manual(values = c("gray15", "white"), guide = "none") +
+  my_style + my_theme + my_labs +
+  labs(y = "Perceived venture quality (1–7)",
+       title = paste0("<b>Disclosure + explanation</b><br>
+         <span style='color:gray45; font-size:12pt'>(n = ", nrow(d_expl), ")</span>")) +
+  theme(plot.title = element_markdown(face = "plain")) +
+  coord_cartesian(ylim = c(1, 7)) +
+  scale_y_continuous(breaks = 1:7) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  geom_signif(
+    # p1
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = max(sum_expl$upper[sum_expl$quality == "Low"]) + .24,
+    tip_length = .003,
+    annotations = pval(p1),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # p2
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = max(sum_expl$upper[sum_expl$quality == "High"]) + .24,
+    tip_length = .003,
+    annotations = pval(p2),
+    color = "gray45",
+    vjust = .0
+  )
+
+
+# final (combined) figure
+rating_1 + rating_2 + rating_3 + plot_layout(guides = 'collect') +
+  plot_annotation(
+  title = "<b>Perceived venture quality of the four pitch decks in the three instruction conditions</b>",
+  subtitle = "as a function of quality and fluency (Study 4)",
+  caption = paste0("<i>Notes:</i><br>", "Error bars indicate 95% confidence intervals around the mean. ",
+                   "Significance brackets represent post-hoc contrasts (two-sided paired t-tests) with Holm (1979) correction.<br>",
+                   "n = ", nrow(d_valid), " participants with four valid decks.")
+) & theme(
+  plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+  plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+  plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)),
+)
+```
+
+```{r}
+#| label: fig-recovery
+#| fig-cap: Factual recovery by visual fluency and instruction condition
+#| fig-width: 10
+#| fig-asp: 0.6
+#| out-width: 100%
+
+# data prep
+#
+# for convenience and to not interfere with later code, we work on a copy of
+# the data
+# --Note: For the plot, we compute each participant's share of correct answers
+#         across the two decks per fluency level (invalid decks are not
+#         included). The inference statistics stem from the mixed logistic
+#         regressions (see above).
+d_rec <- d_long |> filter(!is.na(recovery_correct))
+d_rec$fluency <- factor(d_rec$fluency, levels = c("low", "high"), labels = c("Low", "High"))
+d_rec$condition <- factor(d_rec$condition, levels = c("control", "disclosure", "disclosure_explanation"),
+                          labels = c("Control", "Disclosure", "Disclosure +\nexplanation"))
+rec_fluency <- d_rec |> group_by(ID, condition, fluency) |>
+  summarize(value = mean(recovery_correct)) |> ungroup()
+
+# labels that include statistical inference (odds ratios of the fluency effect)
+str_rec <- c(paste0("OR = ", sprintf('%.2f', exp(2 * lme4::fixef(m_rec_control)["fluency1"]))),
+             paste0("OR = ", sprintf('%.2f', exp(2 * lme4::fixef(m_rec_disclosure)["fluency1"]))),
+             paste0("OR = ", sprintf('%.2f', exp(2 * lme4::fixef(m_rec_explanation)["fluency1"]))))
+d_labels_rec <- data.frame(condition = factor(c("Control", "Disclosure", "Disclosure +\nexplanation"),
+                                              levels = c("Control", "Disclosure", "Disclosure +\nexplanation")),
+                           label = str_rec)
+
+# means and upper CI bounds per condition and fluency level (needed for the
+# labels inside the bars and the bracket positions)
+sum_rec <- rec_fluency |> group_by(condition, fluency) |>
+  summarize(mean = mean(value), upper = ggplot2::mean_cl_normal(value)$ymax)
+# p-values of the fluency effects
+p_rec_ctrl <- coef(summary(m_rec_control))["fluency1", "Pr(>|z|)"]
+p_rec_disc <- coef(summary(m_rec_disclosure))["fluency1", "Pr(>|z|)"]
+p_rec_expl <- coef(summary(m_rec_explanation))["fluency1", "Pr(>|z|)"]
+
+# plot
+ggplot(rec_fluency, aes(x=condition, y=value, fill=fluency)) +
+  stat_summary(fun = "mean", geom="bar", position=position_dodge(.91)) +
+  stat_summary(fun.data = mean_cl_normal, geom="errorbar", width=.08, linewidth=.9,
+               position=position_dodge(.91)) +
+  # means as labels inside the bars
+  geom_text(data = sum_rec,
+            aes(x = condition, y = .055, label = sprintf("%.1f%%", 100 * mean), group = fluency,
+                color = fluency),
+            position = position_dodge(.91), vjust = 0, size = 4.2,
+            family = "Roboto Condensed", inherit.aes = FALSE) +
+  scale_color_manual(values = c("gray15", "white"), guide = "none") +
+  geom_text(data = d_labels_rec, aes(x = condition, y = .98, label = label),
+            size = 3.8, color = "gray25", family = "Roboto Condensed", inherit.aes = FALSE) +
+  my_style + my_theme +
+  scale_y_continuous(labels = scales::label_percent()) +
+  coord_cartesian(ylim = c(0, 1)) +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  labs(x = NULL, y = "Correct answers", fill = "Fluency",
+       title = "<b>Factual recovery by fluency and instruction condition</b>",
+       subtitle = "Share of correct answers to the factual questions (Study 4)",
+       caption = paste0("<i>Notes:</i><br>", "Error bars indicate 95% confidence intervals around the mean of the participants' shares of correct answers.<br>",
+                        "Odds ratios (OR; high vs. low fluency) and significance brackets from mixed logistic regressions ",
+                        "with participant and startup random intercepts<br>(two-sided; preregistered test: disclosure condition). ",
+                        "n = ", length(unique(rec_fluency$ID)), " participants with at least one valid deck.")) +
+  theme(plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain", hjust = 0),
+        plot.subtitle = element_text(size = 14, family = "Roboto Condensed", hjust = 0),
+        plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10,
+                                    margin = margin(t = 7, r = 0, b = 0, l = 0))) +
+  geom_signif(
+    # control condition: high vs. low fluency
+    xmin = c(0.775), xmax = c(1.225),
+    y_position = max(sum_rec$upper[sum_rec$condition == "Control"]) + .03,
+    tip_length = .003,
+    annotations = pval(p_rec_ctrl),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # disclosure condition: high vs. low fluency
+    xmin = c(1.775), xmax = c(2.225),
+    y_position = max(sum_rec$upper[sum_rec$condition == "Disclosure"]) + .03,
+    tip_length = .003,
+    annotations = pval(p_rec_disc),
+    color = "gray45",
+    vjust = .0
+    ) +
+  geom_signif(
+    # disclosure plus explanation condition: high vs. low fluency
+    xmin = c(2.775), xmax = c(3.225),
+    y_position = max(sum_rec$upper[sum_rec$condition == "Disclosure +\nexplanation"]) + .03,
+    tip_length = .003,
+    annotations = pval(p_rec_expl),
+    color = "gray45",
+    vjust = .0
+  )
+```

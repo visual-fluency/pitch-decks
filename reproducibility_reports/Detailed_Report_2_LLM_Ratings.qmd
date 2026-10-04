@@ -1,0 +1,856 @@
+---
+title: "LLM Ratings"
+subtitle: "Detailed Reproducibility Report"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    page-layout: full
+    code-fold: true
+    code-tools:
+      source: true
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+execute:
+  warning: false
+  message: false
+---
+
+<!--
+# Last update: 2026-10-01
+# Author: <blinded for review>
+-->
+
+# Introduction {#sec-intro}
+
+We used a panel of seven vision-capable large language models (LLMs) to check the manipulations of the pitch decks for Studies 3 and 4. For each of the eight fictitious startups of these studies (**Servora**, **Curato**, **Ironhall**, **Foliant**, **Pulsegrid**, **Paperloom**, **Sentyl**, and **Axonmesh**), there are four versions of the pitch deck that cross visual fluency (low vs. high) with substantive quality (low vs. high). The models rated the visual design and the substantive quality of all 32 pitch decks with the same items that the participants of our manipulation checks had answered. The panel also rated the pitch decks of these manipulation checks (Software: **PerkSouq**; Healthcare: **Brachytix**), which allows a comparison with the human participants' ratings. In addition, we tested whether the rating differences remained when the text or the visual design of the pitch decks was removed. The panel's quality ratings also determined the q-scores that we used for the incentives in Studies 3 and 4.
+
+The text-based quality ratings of the real pitch decks are documented in the [Deck Benchmarking Reproducibility Report](Detailed_Report_3_Benchmarking.qmd). **Note that these analyses were not preregistered.**
+
+In what follows, we will give an overview of the results, followed by figures that summarize the results.
+As this report is dynamically created with R and Quarto, we also report all code.
+However, for readability, code is hidden by default and only the relevant results are shown.
+
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+options(knitr.kable.NA = '')
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggtext)
+library(patchwork)
+library(kableExtra)
+options(knitr.kable.NA = '',
+        kable_styling_bootstrap_options = c("striped", "condensed", "responsive"))
+
+# further packages that are loaded on demand are:
+# - readr
+# - tidyr
+# - weights
+# - scales
+# - hrbrthemes
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+
+
+# Custom functions
+#
+# prepare the LLM panel ratings: numeric ratings and, for the original design
+# items, simplicity as the reverse-coded complexity item (i.e., 8 - complexity)
+# -Note: the complexity ratings are kept, the simplicity ratings are added
+panel_prep <- function(d){
+  d$rating <- as.numeric(d$rating)
+  d_simplicity <- d |> filter(item == "complex") |> mutate(item = "simplicity", rating = 8 - rating)
+  bind_rows(d, d_simplicity) |> filter(!is.na(rating))
+}
+#
+# compare the high and the low condition of a factor at the level of the
+# startups: mean rating per startup and condition (i.e., averaged across the
+# models, the repetitions, and the two levels of the other factor), mean of the
+# startup-level differences, percentile bootstrap 95% CI (4,000 resamples of the
+# startups), Cohen's d_z, and the exact two-sided Wilcoxon signed-rank test
+# -Note: since R 4.6.0, `wilcox.test` computes the exact (conditional) p-value
+#        also in the case of tied differences (older versions of R use the
+#        normal approximation in this case)
+# -Note: if a margin is given, the result also contains the p-value of an
+#        equivalence test (two one-sided t-tests, TOST) of the startup-level
+#        differences against this margin
+panel_contrast <- function(d, item, factor, high, low, margin = NA){
+  # mean rating per startup and condition
+  cells <- d[d$item == item & d[[factor]] %in% c(high, low), ] |>
+    group_by(startup, level = .data[[factor]]) |>
+    summarize(rating = mean(rating), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = level, values_from = rating) |>
+    tidyr::drop_na()
+  diffs <- cells[[high]] - cells[[low]]
+  # percentile bootstrap 95% CI of the mean difference
+  set.seed(0)
+  boot <- replicate(4000, mean(sample(sort(diffs), replace = TRUE)))
+  ci <- quantile(boot, c(.025, .975), names = FALSE)
+  # exact Wilcoxon signed-rank test (two-sided)
+  wres <- wilcox.test(cells[[high]], cells[[low]], paired = TRUE, exact = TRUE)
+  # equivalence test (TOST)
+  p_tost <- NA
+  if(!is.na(margin)){
+    p_tost <- max(t.test(diffs, mu = -margin, alternative = "greater")$p.value,
+                  t.test(diffs, mu = margin, alternative = "less")$p.value)
+  }
+  # construct return df
+  return(data.frame(n = nrow(cells), high = mean(cells[[high]]), low = mean(cells[[low]]),
+                    diff = mean(diffs), ci_low = ci[1], ci_high = ci[2],
+                    d = mean(diffs) / sd(diffs), p = wres$p.value, margin = margin, p_tost = p_tost))
+}
+#
+# format the results of `panel_contrast` for a table
+panel_tbl <- function(res){
+  data.frame(high = weights::rd(res$high, 2), low = weights::rd(res$low, 2),
+             diff = weights::rd(res$diff, 2),
+             CI = paste0("[", weights::rd(res$ci_low, 2), ", ", weights::rd(res$ci_high, 2), "]"),
+             d = weights::rd(res$d, 2),
+             p = ifelse(res$p < .001, " &lt; .001", weights::rd(res$p, 3)),
+             margin = ifelse(is.na(res$margin), NA, paste0("±", res$margin)),
+             p_tost = ifelse(is.na(res$p_tost), NA,
+                             ifelse(res$p_tost < .001, " &lt; .001", weights::rd(res$p_tost, 3))))
+}
+#
+# intraclass correlations of a matrix of ratings (rows = rated decks, columns =
+# raters): two-way random effects and absolute agreement for a single rater,
+# ICC(2,1), and for the mean of the k raters, ICC(2,k) (Shrout & Fleiss, 1979)
+# -Note: rows with missing values are removed
+icc_2 <- function(m){
+  m <- as.matrix(m)
+  m <- m[complete.cases(m), ]
+  n <- nrow(m); k <- ncol(m); g <- mean(m)
+  # mean squares of the rows (decks), the columns (raters), and the residuals
+  ms_rows <- k * sum((rowMeans(m) - g)^2) / (n - 1)
+  ms_cols <- n * sum((colMeans(m) - g)^2) / (k - 1)
+  ms_error <- sum((m - outer(rowMeans(m), colMeans(m), "+") + g)^2) / ((n - 1) * (k - 1))
+  # construct return vector
+  return(c(icc_1 = (ms_rows - ms_error) / (ms_rows + (k - 1) * ms_error + k * (ms_cols - ms_error) / n),
+           icc_k = (ms_rows - ms_error) / (ms_rows + (ms_cols - ms_error) / n)))
+}
+#
+# quadratic-weighted Cohen's kappa of two raters for the categories 1 to 7
+# -Note: kappa is not defined (NA) if both raters give all decks the same rating
+kappa_w <- function(a, b, categories = 1:7){
+  obs <- table(factor(a, levels = categories), factor(b, levels = categories))
+  expected <- outer(rowSums(obs), colSums(obs)) / sum(obs)
+  weights <- outer(categories, categories, function(i, j) (i - j)^2) / (length(categories) - 1)^2
+  if(sum(weights * expected) == 0) return(NA)
+  return(1 - sum(weights * obs) / sum(weights * expected))
+}
+#
+# agreement between the models of the LLM panel for a set of items: ICC(2,1) and
+# ICC(2,k) of the scale mean per deck and model (i.e., the mean across the items
+# and the three repetitions), and the quadratic-weighted kappa averaged across
+# all pairs of models and across the items (per item, a model's three ratings of
+# a deck are averaged and rounded)
+panel_reliability <- function(d, items){
+  # scale mean per deck and model
+  m <- d |> filter(item %in% items) |>
+    group_by(file, model) |> summarize(rating = mean(rating), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = model, values_from = rating) |>
+    tidyr::drop_na()
+  icc <- icc_2(m[, -1])
+  # rounded mean rating per item, deck, and model
+  r <- d |> filter(item %in% items) |>
+    group_by(item, file, model) |>
+    summarize(rating = pmin(pmax(round(mean(rating)), 1), 7), .groups = "drop")
+  pairs <- combn(sort(unique(r$model)), 2)
+  kappas <- unlist(lapply(items, function(it){
+    w <- r |> filter(item == it) |> select(-item) |>
+      tidyr::pivot_wider(names_from = model, values_from = rating) |> tidyr::drop_na()
+    apply(pairs, 2, function(p) kappa_w(w[[p[1]]], w[[p[2]]]))
+  }))
+  # construct return df
+  return(data.frame(decks = nrow(m), models = ncol(m) - 1, icc_1 = icc[["icc_1"]],
+                    icc_k = icc[["icc_k"]], kappa = mean(kappas, na.rm = TRUE),
+                    pairs_defined = sum(!is.na(kappas)), pairs = length(kappas)))
+}
+#
+# repeat the column headers of a table above each group of rows (except the
+# first), so that the headers are visible for every part of a long table
+# -Note: the header rows of the HTML table are inserted before the rows with
+#        the group labels (cf. `pack_rows`), without the stripes of the rows
+repeat_header <- function(tbl){
+  html <- as.character(tbl)
+  header <- sub("(?s).*<thead>(.*)</thead>.*", "\\1", html, perl = TRUE)
+  header <- gsub('<th style="', '<th style="box-shadow: none; ', header, fixed = TRUE)
+  groups <- gregexpr('<tr grouplength=', html, fixed = TRUE)[[1]]
+  for(pos in rev(groups[-1])){
+    html <- paste0(substr(html, 1, pos - 1), header, substr(html, pos, nchar(html)))
+  }
+  attributes(html) <- attributes(tbl)
+  return(html)
+}
+```
+
+# Data {#sec-data}
+
+The LLM panel rated each pitch deck in separate calls for the visual design and for the substantive quality (see @sec-panel-method). The raw ratings contain one row per call and item, including the one-sentence justification that the model gave for each rating. We load these ratings separately for the 32 pitch decks of Studies 3 and 4, for the eight pitch decks of our manipulation checks, and for the two modified versions of the pitch decks of Studies 3 and 4 (without text or without visual design). For the comparison with the human participants, we also load the processed datasets of the manipulation checks (see the [Manipulation Checks Reproducibility Report](Detailed_Report_1_MCs.qmd)).
+
+```{r}
+#| label: load data
+#| warning: false
+#| message: false
+#| results: 'hide'
+
+data_dir <- 'reproducibility_reports/data'
+data_dir_mc <- 'reproducibility_reports/data'
+
+# -----------------------------------------------------------------------------
+# LLM panel ratings of the pitch decks
+# -----------------------------------------------------------------------------
+#
+# one row per call and item (i.e., deck x model x repetition x item), including
+# the model's one-sentence justification of the rating (`evidence`)
+# --Note: `fluency` = original design items of the human manipulation checks,
+#         `quality` = original quality items, `vis` = specific visual items
+#
+# pitch decks of Studies 3 and 4
+d_flu <- readr::read_csv(here(data_dir, 'LLM_Panel_Studies_3_4_Decks_Fluency_Items.csv')) |> panel_prep()
+d_qua <- readr::read_csv(here(data_dir, 'LLM_Panel_Studies_3_4_Decks_Quality_Items.csv')) |> panel_prep()
+d_vis <- readr::read_csv(here(data_dir, 'LLM_Panel_Studies_3_4_Decks_Specific_Visual_Items.csv')) |> panel_prep()
+# original pitch decks of the manipulation checks (i.e., decks that vary either
+# visual fluency or substantive quality)
+d_flu_orig <- readr::read_csv(here(data_dir, 'LLM_Panel_MC_Decks_Fluency_Items.csv')) |> panel_prep()
+d_qua_orig <- readr::read_csv(here(data_dir, 'LLM_Panel_MC_Decks_Quality_Items.csv')) |> panel_prep()
+d_vis_orig <- readr::read_csv(here(data_dir, 'LLM_Panel_MC_Decks_Specific_Visual_Items.csv')) |> panel_prep()
+# modified pitch decks: text removed (visual design kept) and visual design
+# removed (text kept)
+d_flu_notext <- readr::read_csv(here(data_dir, 'LLM_Panel_Text_Removed_Fluency_Items.csv')) |> panel_prep()
+d_qua_nodesign <- readr::read_csv(here(data_dir, 'LLM_Panel_Design_Removed_Quality_Items.csv')) |> panel_prep()
+
+# names of the models and startups for tables and figures
+model_labels <- c("anthropic/claude-sonnet-5" = "Claude Sonnet 5",
+                  "google/gemini-3.5-flash" = "Gemini 3.5 Flash",
+                  "openai/gpt-5.4" = "GPT-5.4",
+                  "moonshotai/kimi-k2.6" = "Kimi K2.6",
+                  "xiaomi/mimo-v2.5" = "MiMo V2.5",
+                  "minimax/minimax-m3" = "MiniMax M3",
+                  "qwen/qwen3.7-plus" = "Qwen3.7-plus")
+startup_labels <- c(servora = "Servora", curato = "Curato", ironhall = "Ironhall",
+                    foliant = "Foliant", pulsegrid = "Pulsegrid", paperloom = "Paperloom",
+                    sentyl = "Sentyl", axonmesh = "Axonmesh")
+
+# -----------------------------------------------------------------------------
+# Human manipulation checks (processed datasets)
+# -----------------------------------------------------------------------------
+#
+d_mc_design_sw <- readr::read_csv(here(data_dir_mc, 'MC_1_Design_Software.csv'))
+d_mc_quality_sw <- readr::read_csv(here(data_dir_mc, 'MC_2_Quality_Software.csv'))
+d_mc_design_hc <- readr::read_csv(here(data_dir_mc, 'MC_3_Design_Healthcare.csv'))
+d_mc_quality_hc <- readr::read_csv(here(data_dir_mc, 'MC_4_Quality_Healthcare.csv'))
+# pool the software and the healthcare startup
+d_mc_design <- bind_rows(d_mc_design_sw, d_mc_design_hc)
+d_mc_quality <- bind_rows(d_mc_quality_sw, d_mc_quality_hc)
+rm(d_mc_design_sw, d_mc_design_hc, d_mc_quality_sw, d_mc_quality_hc)
+
+# Number of calls of the LLM panel (for the text)
+#
+# retained calls (i.e., with a complete set of valid ratings) and planned calls
+# (decks x 7 models x 3 repetitions) per questionnaire and deck set
+calls_retained <- c(nrow(distinct(d_flu, file, model, rep)), nrow(distinct(d_qua, file, model, rep)),
+                    nrow(distinct(d_vis, file, model, rep)), nrow(distinct(d_flu_orig, file, model, rep)),
+                    nrow(distinct(d_qua_orig, file, model, rep)), nrow(distinct(d_vis_orig, file, model, rep)),
+                    nrow(distinct(d_flu_notext, file, model, rep)), nrow(distinct(d_qua_nodesign, file, model, rep)))
+calls_planned <- c(n_distinct(d_flu$file), n_distinct(d_qua$file), n_distinct(d_vis$file),
+                   n_distinct(d_flu_orig$file), n_distinct(d_qua_orig$file), n_distinct(d_vis_orig$file),
+                   n_distinct(d_flu_notext$file), n_distinct(d_qua_nodesign$file)) * 7 * 3
+```
+
+
+# LLM ratings of the pitch decks {#sec-panel}
+
+## LLM panel and procedure {#sec-panel-method}
+
+The panel consisted of seven vision-capable LLMs from seven developers (@tbl-panel), which we accessed via [OpenRouter](https://openrouter.ai) between June 30 and July 1, 2026. In each call, a model received all slides of one pitch deck as images (JPEG, 2,000 pixels wide) together with one questionnaire, and it returned a rating and a one-sentence justification for each item. Every call was independent of all other calls. Each model rated each pitch deck three times per questionnaire, with a temperature of 0.1 and the reasoning effort set to high. The visual design and the substantive quality were rated in separate calls, and @sec-appendix shows the exact prompts.
+
+|Model            | Developer |
+|:----------------|:----------|
+|Claude Sonnet 5  | Anthropic |
+|Gemini 3.5 Flash | Google    |
+|GPT-5.4          | OpenAI    |
+|Kimi K2.6        | Moonshot  |
+|MiMo V2.5        | Xiaomi    |
+|MiniMax M3       | MiniMax   |
+|Qwen3.7-plus     | Alibaba   |
+: Overview LLM Panel {#tbl-panel}
+
+We used three questionnaires. The first two contain the original items of our human manipulation checks. The design questionnaire asks how clear, complex (reverse-coded as simplicity), rich in contrast, and symmetrical the visual design of the pitch deck is, and it contains the perceived venture quality item (the startup's potential irrespective of the pitch deck's visual design). The quality questionnaire contains the perceived venture quality item and the four quality dimensions (commercialization opportunity, intellectual property, human capital, and organizational legitimacy). Both questionnaires end with the processing ease item ("The process of studying this pitch deck was …", 0 = difficult to 100 = easy). All other items are rated on 1–7 scales. Since the models' ratings of the original design items differed only little between the high and the low fluency versions (see @tbl-panel-fluency), we added a third questionnaire with specific visual items. These items describe what a low and a high rating looks like, for example, symmetry as the left-right mirror balance of the slides (which is what the *imagefluency* symmetry score measures). This questionnaire also asks for the startup's potential judged from the substance alone and for the processing ease of the pitch deck (0–100). It also contained an item on the overall visual polish, which has no counterpart in the human manipulation checks and is not analyzed here.
+
+For the `r n_distinct(d_flu$file)` pitch decks of Studies 3 and 4, the data contain ratings from `r scales::comma(calls_retained[1])` calls with the original design items, `r scales::comma(calls_retained[2])` calls with the original quality items, and `r scales::comma(calls_retained[3])` calls with the specific visual items (planned: `r scales::comma(calls_planned[1])` calls each). Across all questionnaires and sets of pitch decks (including the pitch decks of the manipulation checks and the modified pitch decks, see below), `r scales::comma(sum(calls_retained))` of the `r scales::comma(sum(calls_planned))` planned calls returned a complete set of valid ratings. The remaining `r sum(calls_planned) - sum(calls_retained)` calls were not repeated.
+
+Since the models act as raters rather than as independent observations, we analyzed the ratings at the level of the startups. For each startup and condition, we averaged the ratings across the models, the repetitions, and the two versions of the other factor (e.g., for the fluency manipulation, the high and the low quality version). The difference between the high and the low condition is the mean of the eight startup-level differences. We report the percentile bootstrap 95% confidence interval of this difference (4,000 resamples of the startups), Cohen's d<sub>z</sub>, and the p-value of an exact two-sided Wilcoxon signed-rank test of the eight startup-level differences. Note that with only eight startups, this test cannot result in a p-value below `r weights::rd(2 / 2^8, 3)`. This smallest possible p-value results if the difference has the same sign for all eight startups, that is, if the high condition received higher (or lower) ratings than the low condition for every startup.
+
+
+## Manipulation checks {#sec-panel-mc}
+
+@tbl-panel-fluency shows the ratings of the visual design of the pitch decks of Studies 3 and 4, separately for the original items and the specific visual items. @tbl-panel-quality shows the ratings of the substantive quality.
+
+```{r}
+#| label: tbl-panel-fluency
+#| tbl-cap: 'LLM ratings of the pitch decks of Studies 3 and 4: Visual fluency manipulation'
+
+# original design items (as in the human manipulation checks)
+res_flu <- bind_rows(
+  panel_contrast(d_flu, "clear", "fluency", "HF", "LF"),
+  panel_contrast(d_flu, "contrast", "fluency", "HF", "LF"),
+  panel_contrast(d_flu, "symmetrical", "fluency", "HF", "LF"),
+  panel_contrast(d_flu, "simplicity", "fluency", "HF", "LF"),
+  panel_contrast(d_flu, "ease", "fluency", "HF", "LF")
+)
+# specific visual items
+res_vis <- bind_rows(
+  panel_contrast(d_vis, "clear", "fluency", "HF", "LF"),
+  panel_contrast(d_vis, "contrast", "fluency", "HF", "LF"),
+  panel_contrast(d_vis, "symmetrical", "fluency", "HF", "LF"),
+  panel_contrast(d_vis, "simplicity", "fluency", "HF", "LF"),
+  panel_contrast(d_vis, "ease", "fluency", "HF", "LF")
+)
+
+bind_rows(panel_tbl(res_flu), panel_tbl(res_vis)) |>
+  mutate(item = rep(c("Clarity", "Contrast", "Symmetry", "Simplicity", "Processing ease (0–100)"), 2)) |>
+  select(item, high, low, diff, CI, d, p) |>
+  kbl(col.names = c("Item", "High Fluency", "Low Fluency", "Difference", "95% CI", "Cohen's d<sub>z</sub>", "p (Wilcoxon)"),
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Mean Rating" = 2, " " = 4)) |>
+  pack_rows(index = c("Original Items" = 5, "Specific Visual Items" = 5),
+            label_row_css = "text-align: center;") |>
+  column_spec(5, extra_css = "white-space: nowrap;") |>
+  row_spec(c(0, 5), extra_css = "border-bottom: 1px solid")
+```
+
+```{r}
+#| label: tbl-panel-quality
+#| tbl-cap: 'LLM ratings of the pitch decks of Studies 3 and 4: Substantive quality manipulation'
+
+res_qua <- bind_rows(
+  panel_contrast(d_qua, "overall", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua, "commercialization", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua, "ip", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua, "management", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua, "legitimacy", "quality", "HQ", "LQ")
+)
+
+panel_tbl(res_qua) |>
+  mutate(item = c("Perceived venture quality", "Commercialization opportunity", "Intellectual property",
+                  "Human capital", "Organizational legitimacy")) |>
+  select(item, high, low, diff, CI, d, p) |>
+  kbl(col.names = c("Item", "High Quality", "Low Quality", "Difference", "95% CI", "Cohen's d<sub>z</sub>", "p (Wilcoxon)"),
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Mean Rating" = 2, " " = 4)) |>
+  column_spec(5, extra_css = "white-space: nowrap;")
+```
+
+In both tables, the difference is the mean of the eight startup-level differences between the high and the low condition, in rating points. For each startup and condition, the mean rating is based on two pitch decks (e.g., the high and the low quality version of the high fluency deck), seven models, and three repetitions. All p-values in both tables are `r weights::rd(2 / 2^8, 3)`, the smallest possible value (see @sec-panel-method): for every item, the high condition received higher ratings than the low condition for each of the eight startups.
+
+
+## Separation of the two manipulations {#sec-panel-separation}
+
+@tbl-panel-cross shows whether each manipulation also changed the ratings of the other construct, that is, whether the quality manipulation changed the ratings of the visual design and whether the fluency manipulation changed the ratings of the substantive quality. In addition to the tests of @tbl-panel-fluency and @tbl-panel-quality, the table reports equivalence tests (two one-sided t-tests, TOST, on the eight startup-level differences) with margins of ±0.5 rating points for the 1–7 items and ±5 points for processing ease (0–100). A significant TOST indicates that differences of 0.5 rating points or more in either direction (5 points or more for processing ease) can be rejected, which supports equivalence within these margins.
+
+```{r}
+#| label: tbl-panel-cross
+#| tbl-cap: 'Separation of the two manipulations: Differences in the ratings of the respective other construct'
+
+res_cross <- bind_rows(
+  # quality manipulation (high minus low quality) on the design items
+  panel_contrast(d_flu, "clear", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_flu, "contrast", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_flu, "symmetrical", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_flu, "simplicity", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_flu, "ease", "quality", "HQ", "LQ", margin = 5),
+  panel_contrast(d_vis, "clear", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_vis, "contrast", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_vis, "symmetrical", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_vis, "simplicity", "quality", "HQ", "LQ", margin = .5),
+  panel_contrast(d_vis, "ease", "quality", "HQ", "LQ", margin = 5),
+  panel_contrast(d_qua, "ease", "quality", "HQ", "LQ", margin = 5),
+  # fluency manipulation (high minus low fluency) on the quality items
+  panel_contrast(d_qua, "overall", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_qua, "commercialization", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_qua, "ip", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_qua, "management", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_qua, "legitimacy", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_flu, "potential", "fluency", "HF", "LF", margin = .5),
+  panel_contrast(d_vis, "potential", "fluency", "HF", "LF", margin = .5)
+)
+
+panel_tbl(res_cross) |>
+  mutate(item = c("Clarity", "Contrast", "Symmetry", "Simplicity", "Processing ease (0–100)",
+                  "Clarity", "Contrast", "Symmetry", "Simplicity", "Processing ease (0–100)",
+                  "Processing ease (0–100)",
+                  "Perceived venture quality", "Commercialization opportunity", "Intellectual property",
+                  "Human capital", "Organizational legitimacy", "Perceived venture quality", "Venture potential"),
+         questionnaire = c(rep("Original design items", 5), rep("Specific visual items", 5),
+                           rep("Original quality items", 6), "Original design items", "Specific visual items")) |>
+  select(item, questionnaire, diff, CI, p, margin, p_tost) |>
+  kbl(col.names = c("Item", "Questionnaire", "Difference", "95% CI", "p (Wilcoxon)", "Margin", "p (TOST)"),
+      align = "llccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 4, "Tests of a Difference" = 1, "Equivalence Tests" = 2)) |>
+  pack_rows(index = c("Visual Design: High Minus Low Quality" = 11, "Substantive Quality: High Minus Low Fluency" = 7),
+            label_row_css = "text-align: center;") |>
+  column_spec(c(2, 4), extra_css = "white-space: nowrap;") |>
+  row_spec(c(0, 11), extra_css = "border-bottom: 1px solid") |>
+  repeat_header()
+```
+
+Note that the processing ease item was part of all three questionnaires. For this item, @tbl-panel-cross therefore shows the difference between the high and the low quality versions for each questionnaire.
+
+
+## Agreement between the models {#sec-panel-reliability}
+
+@tbl-panel-reliability shows how closely the seven models agreed with each other. For each questionnaire, we averaged each model's ratings of a pitch deck across the items and the three repetitions, which results in a matrix of 32 decks × 7 models. Based on this matrix, ICC(2,1) is the reliability of the ratings of a single model and ICC(2,k) is the reliability of the mean rating of all seven models (two-way random effects, absolute agreement). The weighted kappa is the quadratic-weighted Cohen's κ between two models, averaged across all 21 pairs of models and across the items of the questionnaire (per item, a model's three ratings of a deck were averaged and rounded to the nearest scale point).
+
+```{r}
+#| label: tbl-panel-reliability
+#| tbl-cap: 'Agreement between the seven models (pitch decks of Studies 3 and 4)'
+
+rel_flu <- panel_reliability(d_flu, c("clear", "contrast", "symmetrical", "simplicity"))
+rel_vis <- panel_reliability(d_vis, c("clear", "contrast", "symmetrical", "simplicity"))
+rel_qua <- panel_reliability(d_qua, c("overall", "commercialization", "ip", "management", "legitimacy"))
+
+bind_rows(rel_flu, rel_vis, rel_qua) |>
+  mutate(questionnaire = c("Original design items", "Specific visual items", "Original quality items"),
+         items = c("Clarity, contrast, symmetry, simplicity",
+                   "Clarity, contrast, symmetry, simplicity",
+                   "Perceived venture quality and the four quality dimensions"),
+         icc_1 = weights::rd(icc_1, 3), icc_k = weights::rd(icc_k, 3), kappa = weights::rd(kappa, 3)) |>
+  select(questionnaire, items, decks, models, icc_1, icc_k, kappa) |>
+  kbl(col.names = c("Questionnaire", "Items", "Decks", "Models", "ICC(2,1)", "ICC(2,k)", "Weighted κ"),
+      align = "llccccc") |>
+  kable_styling()
+```
+
+Note that κ is not defined for a pair of models that gave all decks the same rating on an item. This was the case for `r sum(rel_flu$pairs - rel_flu$pairs_defined)` of the `r rel_flu$pairs` combinations of model pairs and items for the original design items, `r sum(rel_vis$pairs - rel_vis$pairs_defined)` of `r rel_vis$pairs` for the specific visual items, and `r sum(rel_qua$pairs - rel_qua$pairs_defined)` of `r rel_qua$pairs` for the quality items. These combinations are not part of the averages.
+
+
+## Comparison with the human manipulation checks {#sec-panel-human}
+
+For the pitch decks of our manipulation checks, @tbl-panel-human compares the differences between the high and the low condition in the ratings of the human participants (see the [Manipulation Checks Reproducibility Report](Detailed_Report_1_MCs.qmd)) with those in the ratings of the LLM panel. The human participants each rated one pitch deck, and the models rated the same pitch decks with the same original items. Both the human and the LLM ratings are pooled across the software and the healthcare startup. Since there are only two startups per manipulation, we compare the direction of the differences only. Note also that these pitch decks were created in 2022 and might be part of the models' training data.
+
+```{r}
+#| label: tbl-panel-human
+#| tbl-cap: 'Comparison with the human manipulation checks (original pitch decks)'
+
+# mean ratings of the human participants per condition (pooled across both startups)
+human_means <- function(y, group){
+  c(high = mean(y[group == "high"], na.rm = TRUE), low = mean(y[group == "low"], na.rm = TRUE))
+}
+# mean ratings of the LLM panel per condition (pooled across both startups)
+panel_means <- function(d, item, factor, high, low){
+  c(high = mean(d$rating[d$item == item & d[[factor]] %in% high]),
+    low = mean(d$rating[d$item == item & d[[factor]] %in% low]))
+}
+
+temp_human <- rbind(
+  # fluency manipulation
+  human_means(d_mc_design$clarity, d_mc_design$fluency_condition),
+  human_means(d_mc_design$contrast, d_mc_design$fluency_condition),
+  human_means(d_mc_design$symmetry, d_mc_design$fluency_condition),
+  human_means(d_mc_design$simplicity, d_mc_design$fluency_condition),
+  human_means(d_mc_design$fluency, d_mc_design$fluency_condition),
+  human_means(d_mc_design$quality, d_mc_design$fluency_condition),
+  # quality manipulation
+  human_means(d_mc_quality$quality, d_mc_quality$quality_condition),
+  human_means(d_mc_quality$commerc, d_mc_quality$quality_condition),
+  human_means(d_mc_quality$intell_prop, d_mc_quality$quality_condition),
+  human_means(d_mc_quality$hum_cap, d_mc_quality$quality_condition),
+  human_means(d_mc_quality$legitim, d_mc_quality$quality_condition),
+  human_means(d_mc_quality$fluency, d_mc_quality$quality_condition)
+)
+temp_panel <- rbind(
+  # fluency manipulation
+  panel_means(d_flu_orig, "clear", "fluency", "HF", "LF"),
+  panel_means(d_flu_orig, "contrast", "fluency", "HF", "LF"),
+  panel_means(d_flu_orig, "symmetrical", "fluency", "HF", "LF"),
+  panel_means(d_flu_orig, "simplicity", "fluency", "HF", "LF"),
+  panel_means(d_flu_orig, "ease", "fluency", "HF", "LF"),
+  panel_means(d_flu_orig, "potential", "fluency", "HF", "LF"),
+  # quality manipulation
+  panel_means(d_qua_orig, "overall", "quality", "HQ", "LQ"),
+  panel_means(d_qua_orig, "commercialization", "quality", "HQ", "LQ"),
+  panel_means(d_qua_orig, "ip", "quality", "HQ", "LQ"),
+  panel_means(d_qua_orig, "management", "quality", "HQ", "LQ"),
+  panel_means(d_qua_orig, "legitimacy", "quality", "HQ", "LQ"),
+  panel_means(d_qua_orig, "ease", "quality", "HQ", "LQ")
+)
+human_diff <- temp_human[, "high"] - temp_human[, "low"]
+panel_diff <- temp_panel[, "high"] - temp_panel[, "low"]
+
+data.frame(
+  item = c("Clarity", "Contrast", "Symmetry", "Simplicity", "Processing ease (0–100)", "Perceived venture quality",
+           "Perceived venture quality", "Commercialization opportunity", "Intellectual property", "Human capital",
+           "Organizational legitimacy", "Processing ease (0–100)"),
+  human_high = weights::rd(temp_human[, "high"], 2), human_low = weights::rd(temp_human[, "low"], 2),
+  human_diff = weights::rd(human_diff, 2),
+  panel_high = weights::rd(temp_panel[, "high"], 2), panel_low = weights::rd(temp_panel[, "low"], 2),
+  panel_diff = weights::rd(panel_diff, 2),
+  same = ifelse(sign(human_diff) == sign(panel_diff), "Yes", "No")
+) |>
+  kbl(col.names = c("Item", "High", "Low", "Difference", "High", "Low", "Difference", "Same Direction"),
+      align = "lccccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Human Participants" = 3, "LLM Panel" = 3, " " = 1)) |>
+  pack_rows(index = c("Visual Fluency Manipulation (High vs. Low Fluency)" = 6,
+                      "Substantive Quality Manipulation (High vs. Low Quality)" = 6),
+            label_row_css = "text-align: center;") |>
+  row_spec(c(0, 6), extra_css = "border-bottom: 1px solid")
+```
+
+The human ratings stem from `r nrow(d_mc_design)` participants in the two manipulation checks of the visual fluency and `r nrow(d_mc_quality)` participants in the two manipulation checks of the substantive quality. The direction of the difference was the same in `r sum(sign(human_diff) == sign(panel_diff))` of the `r length(human_diff)` comparisons.
+
+
+## Pitch decks without text or without visual design {#sec-panel-removal}
+
+To test whether the models based their ratings of the visual design on the visual design and their ratings of the substantive quality on the text, we rendered two modified versions of the pitch decks of Studies 3 and 4. In the first, all text was made invisible, whereas the visual design was kept. We created this version for the 16 high quality decks (i.e., the high and the low fluency version of each startup), and the panel rated it with the original design items. In the second, the visual design was replaced by black text on a white background (without images or charts), whereas the text was kept. We created this version for the 16 high fluency decks (i.e., the high and the low quality version of each startup), and the panel rated it with the original quality items. For each item, @tbl-panel-removal shows the difference between the high and the low condition (e.g., high minus low fluency) twice: for the complete decks (i.e., the ratings of @tbl-panel-fluency and @tbl-panel-quality, restricted to the same decks) and for the modified decks. If the models based their ratings of the visual design on the visual design only, removing the text should not change the difference between the high and the low fluency versions. Likewise, if they based their ratings of the substantive quality on the text only, removing the visual design should not change the difference between the high and the low quality versions.
+
+::: {#tbl-panel-removal}
+
+```{r}
+# complete decks: the same cells as the modified decks
+d_flu_hq <- d_flu |> filter(quality == "HQ")
+d_qua_hf <- d_qua |> filter(fluency == "HF")
+
+# fluency manipulation: complete decks vs. decks without text
+res_removal_flu_full <- bind_rows(
+  panel_contrast(d_flu_hq, "clear", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_hq, "contrast", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_hq, "symmetrical", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_hq, "simplicity", "fluency", "HF", "LF")
+)
+res_removal_flu <- bind_rows(
+  panel_contrast(d_flu_notext, "clear", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_notext, "contrast", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_notext, "symmetrical", "fluency", "HF", "LF"),
+  panel_contrast(d_flu_notext, "simplicity", "fluency", "HF", "LF")
+)
+# quality manipulation: complete decks vs. decks without visual design
+res_removal_qua_full <- bind_rows(
+  panel_contrast(d_qua_hf, "overall", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_hf, "commercialization", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_hf, "ip", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_hf, "management", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_hf, "legitimacy", "quality", "HQ", "LQ")
+)
+res_removal_qua <- bind_rows(
+  panel_contrast(d_qua_nodesign, "overall", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_nodesign, "commercialization", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_nodesign, "ip", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_nodesign, "management", "quality", "HQ", "LQ"),
+  panel_contrast(d_qua_nodesign, "legitimacy", "quality", "HQ", "LQ")
+)
+
+temp_full <- panel_tbl(bind_rows(res_removal_flu_full, res_removal_qua_full))
+temp_removed <- panel_tbl(bind_rows(res_removal_flu, res_removal_qua))
+retained <- c(res_removal_flu$diff / res_removal_flu_full$diff,
+              res_removal_qua$diff / res_removal_qua_full$diff) * 100
+
+data.frame(item = c("Clarity", "Contrast", "Symmetry", "Simplicity",
+                    "Perceived venture quality", "Commercialization opportunity", "Intellectual property",
+                    "Human capital", "Organizational legitimacy"),
+           full_diff = temp_full$diff, full_CI = temp_full$CI,
+           removed_diff = temp_removed$diff, removed_CI = temp_removed$CI, removed_p = temp_removed$p,
+           retained = sprintf('%.0f', retained)) |>
+  kbl(col.names = c("Item", "Difference", "95% CI", "Difference", "95% CI", "p (Wilcoxon)", "Retained (in %)"),
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Complete Decks" = 2, "Modified Decks" = 3, " " = 1)) |>
+  add_header_above(c(" " = 1, "Difference Between the High and the Low Condition" = 5, " " = 1)) |>
+  pack_rows(index = c("Visual Fluency Manipulation: Text Removed (High Quality Decks)" = 4,
+                      "Substantive Quality Manipulation: Visual Design Removed (High Fluency Decks)" = 5),
+            label_row_css = "text-align: center;") |>
+  column_spec(c(3, 5), extra_css = "white-space: nowrap;") |>
+  row_spec(c(0, 4), extra_css = "border-bottom: 1px solid")
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Differences between the high and the low condition of the respective manipulation (in rating points), for the complete and for the modified versions of the same decks. Retained = difference for the modified decks as a percentage of the difference for the complete decks.
+:::
+
+LLM ratings of the pitch decks of Studies 3 and 4 without text or without visual design
+:::
+
+The column "Retained" shows how much of the difference between the high and the low condition remains once the text (or the visual design) is removed. A value of 100% means that the difference is the same with and without the removed part, and a value of 0% would mean that the difference disappears once this part is removed. Values above 100% mean that the difference was larger for the modified decks than for the complete decks. Note that the reverse tests (i.e., fluency ratings of the decks without visual design and quality ratings of the decks without text) are not informative, since the high and the low condition are identical by construction in these versions.
+
+
+## q-scores {#sec-qscores}
+
+The bonus in Studies 3 and 4 depended on the q-score of the startup that was drawn for the participant (see the [Study 3: Attention and Investment Allocation Reproducibility Report](Detailed_Report_6_Attention_Investment.qmd) and the [Study 4: Design Disclosure and an Explanation of Processing Ease Reproducibility Report](Detailed_Report_7_Design_Disclosure.qmd)). The q-score of each startup and quality level is based on the panel's ratings of the perceived venture quality item in the quality questionnaire ("Overall, the startup's potential to generate a sustainable competitive advantage and positive returns to the stakeholders is …"). For each model, we averaged its ratings across the two fluency versions and the repetitions (three per deck, two for three combinations of model and deck). We then averaged the seven model means and rescaled the result to the range from 0 to 1, that is, q = (M − 1) / 6. Since the high and the low fluency version of a pitch deck share the same q-score, the q-scores reward substantive quality only. @tbl-qscores shows the q-scores.
+
+```{r}
+#| label: tbl-qscores
+#| tbl-cap: 'q-scores of the eight startups'
+
+# mean rating of the venture quality item per startup, quality level, and model,
+# then mean across the seven models, rescaled to the range from 0 to 1
+d_qua |> filter(item == "overall") |>
+  group_by(startup, quality, model) |> summarize(rating = mean(rating), .groups = "drop") |>
+  group_by(startup, quality) |> summarize(q = (mean(rating) - 1) / 6, models = n(), .groups = "drop") -> q_scores
+
+q_scores |> tidyr::pivot_wider(id_cols = startup, names_from = quality, values_from = q) |>
+  mutate(startup = factor(startup_labels[startup], levels = startup_labels)) |>
+  arrange(startup) |>
+  mutate(diff = HQ - LQ) |>
+  select(startup, HQ, LQ, diff) |>
+  kbl(digits = 3, col.names = c("Startup", "High Quality", "Low Quality", "Difference"),
+      align = "lccc") |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "q-Score" = 3))
+```
+
+Each q-score is based on all `r max(q_scores$models)` models. The ratings of the individual models are part of the LLM ratings that we load in this report and are also available in the [online repository](https://researchbox.org/1836&PEER_REVIEW_passcode=NKVZFU).
+
+
+# Plots {#sec-plots}
+
+@fig-panel shows the LLM ratings of the pitch decks of Studies 3 and 4 for each model: the specific visual items for the visual fluency manipulation and the quality items for the substantive quality manipulation. @fig-startups shows the mean ratings of the high and the low condition for each startup, including the two startups of the manipulation checks.
+
+```{r}
+#| label: fig-panel
+#| fig-cap: LLM ratings of the pitch decks of Studies 3 and 4 by model
+#| fig-width: 12
+#| fig-asp: 0.8
+#| out-width: 100%
+
+# aesthetics
+#
+# define colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+# colors of the high and the low condition: the main blue and a burnt orange as
+# its complementary color
+col_high <- blue_main
+col_low <- "#D4772C"
+
+# theme settings
+my_theme <- theme(panel.grid.major.y = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0),
+                  strip.text = element_text(size = 11, hjust = .5),
+                  axis.title.x = element_text(size = 11, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+                  axis.text.y = element_text(size = 10.5),
+                  legend.position = "bottom")
+
+# data prep
+#
+# mean rating per model, startup, item, and condition (i.e., across the two
+# decks of a startup and condition and the three repetitions)
+d_fig_vis <- d_vis |>
+  filter(item %in% c("ease", "clear", "contrast", "symmetrical", "simplicity")) |>
+  group_by(model, startup, item, level = fluency) |>
+  summarize(rating = mean(rating), .groups = "drop")
+d_fig_qua <- d_qua |>
+  filter(item %in% c("overall", "commercialization", "ip", "management", "legitimacy")) |>
+  group_by(model, startup, item, level = quality) |>
+  summarize(rating = mean(rating), .groups = "drop")
+# labels
+d_fig_vis$item <- factor(d_fig_vis$item, levels = c("ease", "clear", "contrast", "symmetrical", "simplicity"),
+                         labels = c("Processing ease\n(0–100)", "Clarity", "Contrast", "Symmetry", "Simplicity"))
+d_fig_qua$item <- factor(d_fig_qua$item, levels = c("overall", "commercialization", "ip", "management", "legitimacy"),
+                         labels = c("Perceived venture quality", "Commercialization\nopportunity", "Intellectual\nproperty",
+                                    "Human capital", "Organizational\nlegitimacy"))
+d_fig_vis$level <- factor(d_fig_vis$level, levels = c("HF", "LF"), labels = c("High", "Low"))
+d_fig_qua$level <- factor(d_fig_qua$level, levels = c("HQ", "LQ"), labels = c("High", "Low"))
+# models in alphabetical order (from top to bottom)
+d_fig_vis$model <- factor(model_labels[d_fig_vis$model], levels = rev(model_labels))
+d_fig_qua$model <- factor(model_labels[d_fig_qua$model], levels = rev(model_labels))
+# means per model and condition
+d_fig_vis |> group_by(model, item, level) |> summarize(rating = mean(rating), .groups = "drop") -> d_fig_vis_means
+d_fig_qua |> group_by(model, item, level) |> summarize(rating = mean(rating), .groups = "drop") -> d_fig_qua_means
+# scale limits (processing ease: 0-100; all other items: 1-7)
+d_fig_vis_limits <- data.frame(item = factor(rep(levels(d_fig_vis$item), each = 2), levels = levels(d_fig_vis$item)),
+                               rating = c(0, 100, 1, 7, 1, 7, 1, 7, 1, 7), model = levels(d_fig_vis$model)[1])
+
+# figure: visual fluency (specific visual items)
+panel_1 <- ggplot(d_fig_vis, aes(x = rating, y = model)) +
+  geom_blank(data = d_fig_vis_limits) +
+  geom_point(aes(color = level), size = 1.6, alpha = .45,
+             position = position_jitter(width = 0, height = .15, seed = 42)) +
+  geom_point(data = d_fig_vis_means, aes(fill = level), shape = 23, size = 3, color = "gray15", stroke = .4) +
+  facet_wrap(vars(item), nrow = 1, scales = "free_x") +
+  scale_x_continuous(breaks = function(lim) if(lim[2] > 10) c(0, 25, 50, 75, 100) else c(1, 3, 5, 7)) +
+  scale_color_manual(values = c("High" = col_high, "Low" = col_low), name = "Condition:",
+                     guide = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  scale_fill_manual(values = c("High" = col_high, "Low" = col_low), guide = "none") +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  labs(x = NULL, y = NULL,
+       title = "<b>Visual fluency manipulation</b> (specific visual items, high vs. low fluency)")
+
+# figure: substantive quality (quality items)
+panel_2 <- ggplot(d_fig_qua, aes(x = rating, y = model)) +
+  geom_point(aes(color = level), size = 1.6, alpha = .45,
+             position = position_jitter(width = 0, height = .15, seed = 42)) +
+  geom_point(data = d_fig_qua_means, aes(fill = level), shape = 23, size = 3, color = "gray15", stroke = .4) +
+  facet_wrap(vars(item), nrow = 1) +
+  scale_x_continuous(limits = c(1, 7), breaks = c(1, 3, 5, 7)) +
+  scale_color_manual(values = c("High" = col_high, "Low" = col_low), name = "Condition:",
+                     guide = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  scale_fill_manual(values = c("High" = col_high, "Low" = col_low), guide = "none") +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  labs(x = "Rating", y = NULL,
+       title = "<b>Substantive quality manipulation</b> (quality items, high vs. low quality)")
+
+# final (combined) figure
+panel_1 / panel_2 + plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "<b>LLM ratings of the pitch decks of Studies 3 and 4 by model</b>",
+    subtitle = "High vs. low condition for each model and item",
+    caption = paste0("<i>Notes:</i><br>", "Small points represent the mean rating of a startup in a condition (two decks, three repetitions) for a model. ",
+                     "Diamonds represent the mean of the eight startups.<br>",
+                     "Processing ease on a 0–100 scale, all other items on 1–7 scales."),
+    # --Note: `theme` inside `plot_annotation`, so that the titles of the two
+    #         parts keep their (smaller) size
+    theme = theme(
+      plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+      plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+      plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+  ) & theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: fig-startups
+#| fig-cap: LLM ratings of the high and the low condition by startup
+#| fig-width: 12
+#| fig-asp: 0.5
+#| out-width: 100%
+
+# data prep
+#
+# mean rating per startup and condition across the items, the models, the
+# repetitions, and (for the pitch decks of Studies 3 and 4) the two versions of
+# the other factor
+startup_means <- function(d, items, factor, high, low){
+  d |> filter(item %in% items, .data[[factor]] %in% c(high, low)) |>
+    group_by(startup, level = .data[[factor]]) |>
+    summarize(rating = mean(rating), .groups = "drop") |>
+    mutate(level = factor(level, levels = c(high, low), labels = c("High", "Low")))
+}
+# visual fluency: specific visual items (without polish and processing ease),
+# substantive quality: quality items
+items_vis <- c("clear", "contrast", "symmetrical", "simplicity")
+items_qua <- c("overall", "commercialization", "ip", "management", "legitimacy")
+d_fig_startups <- bind_rows(
+  startup_means(d_vis, items_vis, "fluency", "HF", "LF") |> mutate(manipulation = "fluency", decks = "Studies 3 and 4"),
+  startup_means(d_vis_orig, items_vis, "fluency", "HF", "LF") |> mutate(manipulation = "fluency", decks = "MCs"),
+  startup_means(d_qua, items_qua, "quality", "HQ", "LQ") |> mutate(manipulation = "quality", decks = "Studies 3 and 4"),
+  startup_means(d_qua_orig, items_qua, "quality", "HQ", "LQ") |> mutate(manipulation = "quality", decks = "MCs")
+)
+# labels (startups of Studies 3 and 4 from top to bottom, then the two startups
+# of the manipulation checks)
+startup_labels_all <- c(startup_labels, perksouq = "PerkSouq", brachytix = "Brachytix")
+d_fig_startups$startup <- factor(startup_labels_all[d_fig_startups$startup], levels = rev(startup_labels_all))
+d_fig_startups$manipulation <- factor(d_fig_startups$manipulation, levels = c("fluency", "quality"),
+                                      labels = c("Visual fluency manipulation (specific visual items)",
+                                                 "Substantive quality manipulation (quality items)"))
+# high and low condition side by side (for the lines between the two points)
+d_fig_startups_wide <- d_fig_startups |> tidyr::pivot_wider(names_from = level, values_from = rating)
+
+# plot
+ggplot() +
+  # line between the startups of Studies 3 and 4 and those of the manipulation checks
+  geom_hline(yintercept = 2.5, color = "gray60", linetype = "dotted", linewidth = .5) +
+  geom_segment(data = d_fig_startups_wide, aes(x = Low, xend = High, y = startup, yend = startup),
+               color = "gray75", linewidth = 1) +
+  geom_point(data = d_fig_startups, aes(x = rating, y = startup, color = level, shape = decks), size = 3.2) +
+  facet_wrap(vars(manipulation), nrow = 1) +
+  scale_x_continuous(limits = c(1, 7), breaks = 1:7) +
+  scale_color_manual(values = c("High" = col_high, "Low" = col_low), name = "Condition:") +
+  scale_shape_manual(values = c("Studies 3 and 4" = 16, "MCs" = 17), guide = "none") +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(size = 12, face = "bold", hjust = 0),
+        axis.text.y = element_text(size = 10.5),
+        axis.title.x = element_text(size = 11, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        legend.position = "bottom",
+        plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+        plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+        plot.caption.position = "plot",
+        plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0))) +
+  labs(x = "Mean rating", y = NULL,
+       title = "<b>LLM ratings of the high and the low condition by startup</b>",
+       subtitle = "Eight startups of Studies 3 and 4 and the two startups of the manipulation checks",
+       caption = paste0("<i>Notes:</i><br>", "Points represent the mean rating of a startup's pitch decks in a condition across the items (1–7 scales), the seven models, and the three repetitions.<br>",
+                        "Circles represent the eight startups of Studies 3 and 4 (means across the two versions of the other factor). Triangles represent the two startups of the<br>",
+                        "manipulation checks, whose pitch decks vary either visual fluency or substantive quality."))
+```
+
+
+# Prompts {.appendix #sec-appendix}
+
+The prompts of the three questionnaires of the LLM panel (see @sec-panel-method). In each call, all slide images of the pitch deck were appended to the prompt (in the same user message).
+
+Original design items:
+
+```{.default .code-overflow-wrap code-line-numbers="false"}
+You are taking part in a study on startup pitch decks. Pitch decks are short presentations entrepreneurs use to summarize their venture. Below is one startup's pitch deck, shown as a sequence of slide images. Please look through the WHOLE deck, then answer the questions about its VISUAL DESIGN.
+
+Answer EACH item on the 1-7 scale shown, EXCEPT the final [ease] item which is a 0-100 slider:
+  [clear] How clear do you perceive the visual design of the pitch deck to be?  (1 = not at all ... 7 = very much)
+  [complex] How complex do you perceive the visual design of the pitch deck to be?  (1 = not at all ... 7 = very much)
+  [contrast] How rich in contrast do you perceive the visual design of the pitch deck to be?  (1 = not at all ... 7 = very much)
+  [symmetrical] How symmetrical do you perceive the visual design of the pitch deck to be?  (1 = not at all ... 7 = very much)
+  [potential] Irrespective of the pitch deck's visual design, the venture's potential to generate a sustainable competitive advantage and positive returns to the stakeholders is …  (1 = very poor ... 7 = excellent)
+  [ease] The process of studying this pitch deck was …  (0 = difficult ... 100 = easy)
+
+Return ONLY a JSON object, no prose, mapping each item key to {"rating": <integer within that item's scale>, "evidence": "<one short sentence citing a specific slide/detail>"}.
+Keys required: clear, complex, contrast, symmetrical, potential, ease.
+Rate as a thoughtful human evaluator would; do not refuse; give your best judgement.
+```
+
+Original quality items:
+
+```{.default .code-overflow-wrap code-line-numbers="false"}
+You are taking part in a study on startup pitch decks. Pitch decks are short presentations entrepreneurs use to summarize their venture. Below is one startup's pitch deck, shown as a sequence of slide images. Please look through the WHOLE deck, then answer about the STARTUP'S QUALITY (judge the venture itself, irrespective of visual polish).
+
+Answer EACH item on the 1-7 scale shown, EXCEPT the final [ease] item which is a 0-100 slider:
+  [overall] Overall, the startup's potential to generate a sustainable competitive advantage and positive returns to the stakeholders is …  (1 = very poor ... 7 = excellent)
+  [commercialization] The commercialization opportunity (e.g., customer demand and acceptance, traction, size of target market) of this startup is …  (1 = very poor ... 7 = excellent)
+  [ip] The intellectual property (e.g., trademarks, patents, copyrights) of this startup is …  (1 = very poor ... 7 = excellent)
+  [management] The management capabilities (e.g., education, industry experience) of this startup’s team are …  (1 = very poor ... 7 = excellent)
+  [legitimacy] The organizational legitimacy (e.g., investor commitment, alliances, partnerships) of this startup is …  (1 = very poor ... 7 = excellent)
+  [ease] The process of studying this pitch deck was …  (0 = difficult ... 100 = easy)
+
+Return ONLY a JSON object, no prose, mapping each item key to {"rating": <integer within that item's scale>, "evidence": "<one short sentence citing a specific slide/detail>"}.
+Keys required: overall, commercialization, ip, management, legitimacy, ease.
+Rate as a thoughtful human evaluator would; do not refuse; give your best judgement.
+```
+
+Specific visual items:
+
+```{.default .code-overflow-wrap code-line-numbers="false"}
+You are judging ONLY the VISUAL PRODUCTION QUALITY of a startup pitch deck, shown as a sequence of slide images. Judge how the deck LOOKS - its rendering, polish and finish - NOT the layout structure, the wording, or the business idea. Two decks can share the exact same layout and text yet look completely different: one crisp, punchy and clean, the other faded, greyed-out, textured or noisy. Look closely at the actual pixels - colour strength, sharpness, background texture, stray marks - and rate what you SEE, not what the deck says.
+
+Answer EACH item on the 1-7 scale shown, EXCEPT the final [ease] item which is a 0-100 slider:
+  [clear] Rendering crispness and legibility: is the text sharp, dark and easy to read (7), or faint, washed-out, low-contrast and hard on the eyes (1)?  (1 = faint / washed-out ... 7 = sharp / crisp)
+  [contrast] Colour and tonal strength: do elements use punchy, saturated colour against clean backgrounds (7), or is everything muted, greyed and flat (1)?  (1 = muted / greyed ... 7 = punchy / saturated)
+  [symmetrical] Left-right (mirror) balance - imagine folding the slide down its vertical centre: do the two halves broadly match, with content centred and both edges treated evenly (7)? Or is it clearly lopsided - weighted to one side, a band or heavy element on only ONE edge, headings pushed off-centre, or blocks in a staggered / stair-stepped arrangement (1)?  (1 = lopsided / one-sided ... 7 = balanced / mirror-even)
+  [simplicity] Cleanliness of the visual surface: are backgrounds clean and smooth (7), or covered with hatching, grain, speckle or stray decorative marks (1)?  (1 = noisy / textured ... 7 = clean / smooth)
+  [polish] OVERALL, how visually polished does the deck look - a crisp, high-end, professionally produced investor deck (7), or a rough, degraded, low-effort rendering (1)?  (1 = rough / degraded ... 7 = polished / high-end)
+  [potential] Setting the visuals ENTIRELY aside, how strong is the venture's underlying business potential, judged from the substance alone?  (1 = very poor ... 7 = excellent)
+  [ease] How effortless was it to VISUALLY take in this deck - did your eyes glide through crisp, clean, high-contrast pages (100), or have to work through faded, low-contrast, cluttered or textured ones (0)?  (0 = took real effort ... 100 = completely effortless)
+
+Return ONLY a JSON object, no prose, mapping each item key to {"rating": <integer within that item's scale>, "evidence": "<one short sentence citing a specific slide/detail>"}.
+Keys required: clear, contrast, symmetrical, simplicity, polish, potential, ease.
+Rate as a thoughtful human evaluator would; do not refuse; give your best judgement.
+```

@@ -1,0 +1,396 @@
+# Manipulation Checks and Validation {#sec-validation}
+
+This section reproduces the manipulation checks of the paper and Appendix A. The first part covers the four online experiments with human participants (Appendix A.2). Their data processing, exclusions, and further analyses are documented in the [Manipulation Checks Reproducibility Report](Detailed_Report_1_MCs.qmd). The LLM ratings of the pitch decks (Appendix A.3–A.4) follow further below.
+
+```{r}
+#| label: validation-analyses
+
+# Manipulation checks
+# AsPredicted Preregistrations #111740 (visual fluency, software startup),
+# #112721 (substantive quality, software startup), #116999 (visual fluency,
+# healthcare startup), #117000 (substantive quality, healthcare startup)
+#
+# processed data (one row per participant)
+mc_design_sw <- readr::read_csv(here(processed_dir, 'MC_1_Design_Software.csv'))
+mc_quality_sw <- readr::read_csv(here(processed_dir, 'MC_2_Quality_Software.csv'))
+mc_design_hc <- readr::read_csv(here(processed_dir, 'MC_3_Design_Healthcare.csv'))
+mc_quality_hc <- readr::read_csv(here(processed_dir, 'MC_4_Quality_Healthcare.csv'))
+# survey exports: number of recorded and finished responses
+mc_raw_design_sw <- readr::read_csv(here(raw_dir, 'MC_1_Design_Software_Qualtrics.csv'))
+mc_raw_quality_sw <- readr::read_csv(here(raw_dir, 'MC_2_Quality_Software_Qualtrics.csv'))
+mc_raw_design_hc <- readr::read_csv(here(raw_dir, 'MC_3_Design_Healthcare_Qualtrics.csv'))
+mc_raw_quality_hc <- readr::read_csv(here(raw_dir, 'MC_4_Quality_Healthcare_Qualtrics.csv'))
+mc_n_design_sw <- c(recorded = nrow(mc_raw_design_sw), finished = sum(mc_raw_design_sw$Finished))
+mc_n_quality_sw <- c(recorded = nrow(mc_raw_quality_sw), finished = sum(mc_raw_quality_sw$Finished))
+mc_n_design_hc <- c(recorded = nrow(mc_raw_design_hc), finished = sum(mc_raw_design_hc$Finished))
+mc_n_quality_hc <- c(recorded = nrow(mc_raw_quality_hc), finished = sum(mc_raw_quality_hc$Finished))
+
+# convert conditions into factors (high first)
+mc_design_sw$fluency_condition <- factor(mc_design_sw$fluency_condition, levels = c("high", "low"))
+mc_quality_sw$quality_condition <- factor(mc_quality_sw$quality_condition, levels = c("high", "low"))
+mc_design_hc$fluency_condition <- factor(mc_design_hc$fluency_condition, levels = c("high", "low"))
+mc_quality_hc$quality_condition <- factor(mc_quality_hc$quality_condition, levels = c("high", "low"))
+
+# visual checks: t-tests of the six outcomes by visual fluency
+mc_fl_sw <- bind_rows(mc_ttest(contrast ~ fluency_condition, mc_design_sw),
+                      mc_ttest(clarity ~ fluency_condition, mc_design_sw),
+                      mc_ttest(symmetry ~ fluency_condition, mc_design_sw),
+                      mc_ttest(simplicity ~ fluency_condition, mc_design_sw),
+                      mc_ttest(fluency ~ fluency_condition, mc_design_sw),
+                      mc_ttest(quality ~ fluency_condition, mc_design_sw))
+mc_fl_hc <- bind_rows(mc_ttest(contrast ~ fluency_condition, mc_design_hc),
+                      mc_ttest(clarity ~ fluency_condition, mc_design_hc),
+                      mc_ttest(symmetry ~ fluency_condition, mc_design_hc),
+                      mc_ttest(simplicity ~ fluency_condition, mc_design_hc),
+                      mc_ttest(fluency ~ fluency_condition, mc_design_hc),
+                      mc_ttest(quality ~ fluency_condition, mc_design_hc))
+rownames(mc_fl_sw) <- c("contrast", "clarity", "symmetry", "simplicity", "ease", "quality")
+rownames(mc_fl_hc) <- c("contrast", "clarity", "symmetry", "simplicity", "ease", "quality")
+
+# quality checks: t-tests of the six outcomes by substantive quality
+mc_ql_sw <- bind_rows(mc_ttest(intell_prop ~ quality_condition, mc_quality_sw),
+                      mc_ttest(hum_cap ~ quality_condition, mc_quality_sw),
+                      mc_ttest(commerc ~ quality_condition, mc_quality_sw),
+                      mc_ttest(legitim ~ quality_condition, mc_quality_sw),
+                      mc_ttest(quality ~ quality_condition, mc_quality_sw),
+                      mc_ttest(fluency ~ quality_condition, mc_quality_sw))
+mc_ql_hc <- bind_rows(mc_ttest(intell_prop ~ quality_condition, mc_quality_hc),
+                      mc_ttest(hum_cap ~ quality_condition, mc_quality_hc),
+                      mc_ttest(commerc ~ quality_condition, mc_quality_hc),
+                      mc_ttest(legitim ~ quality_condition, mc_quality_hc),
+                      mc_ttest(quality ~ quality_condition, mc_quality_hc),
+                      mc_ttest(fluency ~ quality_condition, mc_quality_hc))
+rownames(mc_ql_sw) <- c("capital", "human", "commerc", "legitim", "quality", "ease")
+rownames(mc_ql_hc) <- c("capital", "human", "commerc", "legitim", "quality", "ease")
+```
+
+
+## Human manipulation checks: design and samples {#sec-validation-sample}
+
+The human manipulation checks were four preregistered online experiments, one for each manipulation (visual fluency or substantive quality) and each startup of Studies 1 and 2 (the software startup PerkSouq and the healthcare startup Brachytix). Each experiment had a one-factor between-subjects design with random assignment to a high or a low condition. In the two visual checks, the decks differed in visual fluency and contained the same substantive information. In the two quality checks, they differed in substantive quality and had the same neutral design. The surveys ran on Qualtrics, the decks were hosted on DocSend, and the participants were recruited through Prolific.
+
+Qualtrics recorded `r mc_n_design_sw["recorded"]` responses in the software visual check, `r mc_n_quality_sw["recorded"]` in the software quality check, `r mc_n_design_hc["recorded"]` in the healthcare visual check, and `r mc_n_quality_hc["recorded"]` in the healthcare quality check, of which `r mc_n_design_sw["finished"]`, `r mc_n_quality_sw["finished"]`, `r mc_n_design_hc["finished"]`, and `r mc_n_quality_hc["finished"]` were finished. After the exclusions, `r nrow(mc_design_sw)` participants remained in the software visual check (`r sum(mc_design_sw$fluency_condition == "high")` high and `r sum(mc_design_sw$fluency_condition == "low")` low fluency), `r nrow(mc_quality_sw)` in the software quality check (`r sum(mc_quality_sw$quality_condition == "high")` high and `r sum(mc_quality_sw$quality_condition == "low")` low quality), `r nrow(mc_design_hc)` in the healthcare visual check (`r sum(mc_design_hc$fluency_condition == "high")` high and `r sum(mc_design_hc$fluency_condition == "low")` low fluency), and `r nrow(mc_quality_hc)` in the healthcare quality check (`r sum(mc_quality_hc$quality_condition == "high")` high and `r sum(mc_quality_hc$quality_condition == "low")` low quality). The analyses therefore included `r nrow(mc_design_sw) + nrow(mc_quality_sw) + nrow(mc_design_hc) + nrow(mc_quality_hc)` participants. In all four checks, the exclusions also removed participants whose conditions recorded by Qualtrics and by DocSend disagreed, a rule that was not preregistered.
+
+The mean age of the participants was `r f2(mean(mc_design_sw$age, na.rm = TRUE))` years in the software visual check, `r f2(mean(mc_quality_sw$age, na.rm = TRUE))` years in the software quality check, `r f2(mean(mc_design_hc$age, na.rm = TRUE))` years in the healthcare visual check, and `r f2(mean(mc_quality_hc$age, na.rm = TRUE))` years in the healthcare quality check. The share of women was `r sprintf('%.1f', 100 * mean(mc_design_sw$sex == "Female", na.rm = TRUE))`%, `r sprintf('%.1f', 100 * mean(mc_quality_sw$sex == "Female", na.rm = TRUE))`%, `r sprintf('%.1f', 100 * mean(mc_design_hc$sex == "Female", na.rm = TRUE))`%, and `r sprintf('%.1f', 100 * mean(mc_quality_hc$sex == "Female", na.rm = TRUE))`%, respectively.
+
+
+## Human manipulation checks: preregistered t-tests {#sec-validation-tests}
+
+The visual checks measured perceived contrast, clarity, symmetry, and complexity on scales from 1 (not at all) to 7 (very much), with complexity reverse-coded as simplicity (8 minus the response). They further measured processing ease, the overall fluency measure, with the item "The process of studying this pitch deck was ..." on a scale from 0 (difficult) to 100 (easy), and perceived venture quality on a scale from 1 (very poor) to 7 (excellent). The quality checks measured intellectual property (organizational capital), human capital, commercialization opportunity, organizational legitimacy, and perceived venture quality on scales from 1 (very poor) to 7 (excellent), followed by the same processing-ease item. The preregistrations predicted higher ratings in the high condition for the first five outcomes of each check and no difference in perceived venture quality (visual checks) or processing ease (quality checks). As preregistered, each outcome was compared between the high and the low condition with an independent-samples t-test at α = .05, using Welch's test when the median-centered Levene test indicated unequal variances (α = .05). All tests are two-sided, and Cohen's *d* is the standardized difference between the high and the low condition. [Table A1](#mc-table-A1) reports the visual checks and [Table A2](#mc-table-A2) the quality checks. Figures [A2](#mc-figure-A2), [A3](#mc-figure-A3), [A4](#mc-figure-A4), and [A5](#mc-figure-A5) show the individual ratings and condition means of the four checks.
+
+*Results.* In both visual checks, the high-fluency deck received higher ratings of contrast, clarity, and symmetry (all `r p_txt(max(mc_fl_sw$p[1:3], mc_fl_hc$p[1:3]))`) and higher processing ease (software startup: `r mc_ttest_txt(mc_fl_sw["ease", ])`; healthcare startup: `r mc_ttest_txt(mc_fl_hc["ease", ])`). Perceived simplicity did not differ significantly (software startup `r p_txt(mc_fl_sw["simplicity", "p"])`, healthcare startup `r p_txt(mc_fl_hc["simplicity", "p"])`), and visual fluency did not significantly affect perceived venture quality (software startup: `r mc_ttest_txt(mc_fl_sw["quality", ])`; healthcare startup: `r mc_ttest_txt(mc_fl_hc["quality", ])`).
+
+In the software quality check, the high-quality deck received higher ratings of intellectual property, human capital, organizational legitimacy, and perceived venture quality (largest `r p_txt(max(mc_ql_sw[c("capital", "human", "legitim", "quality"), "p"]))`). Perceived venture quality was `r f2(mc_ql_sw["quality", "mean_high"])` in the high-quality and `r f2(mc_ql_sw["quality", "mean_low"])` in the low-quality condition (*t*(`r mc_ql_sw["quality", "df_txt"]`) = `r f2(mc_ql_sw["quality", "t"])`, `r p_txt(mc_ql_sw["quality", "p"])`, *d* = `r weights::rd(mc_ql_sw["quality", "d"], 2)`). Commercialization opportunity did not differ significantly (`r p_txt(mc_ql_sw["commerc", "p"])`). In the healthcare quality check, the high-quality deck received higher ratings on all four substantive dimensions and perceived venture quality (largest `r p_txt(max(mc_ql_hc$p[1:5]))`). Perceived venture quality was `r f2(mc_ql_hc["quality", "mean_high"])` in the high-quality and `r f2(mc_ql_hc["quality", "mean_low"])` in the low-quality condition (*t*(`r mc_ql_hc["quality", "df_txt"]`) = `r f2(mc_ql_hc["quality", "t"])`, `r p_txt(mc_ql_hc["quality", "p"])`, *d* = `r weights::rd(mc_ql_hc["quality", "d"], 2)`). Substantive quality did not significantly affect processing ease (software startup: `r mc_ttest_txt(mc_ql_sw["ease", ])`; healthcare startup: `r mc_ttest_txt(mc_ql_hc["ease", ])`).
+
+::: {#mc-table-A1}
+```{r}
+#| label: validation-table-A1
+
+mc_A1 <- bind_rows(mc_fl_sw, mc_fl_hc)
+data.frame(
+  Outcome = rep(rep(c("Contrast", "Clarity", "Symmetry", "Simplicity", "Processing ease",
+                      "Perceived venture quality"), 2), each = 2),
+  Condition = rep(c("High", "Low"), 12),
+  N = c(rbind(mc_A1$n_high, mc_A1$n_low)),
+  Mean = f2(c(rbind(mc_A1$mean_high, mc_A1$mean_low))),
+  SD = weights::rd(c(rbind(mc_A1$sd_high, mc_A1$sd_low)), 3),
+  t = c(rbind(paste0("t(", mc_A1$df_txt, ") = ", f2(mc_A1$t)), "")),
+  p = c(rbind(p_tbl(mc_A1$p), "")),
+  d = c(rbind(weights::rd(mc_A1$d, 2), ""))
+) |>
+  kbl(col.names = c("Outcome", "Fluency condition", "N", "Mean", "SD", "t-test", "p", "Cohen’s d"),
+      caption = "Table A1: Manipulation checks, visual fluency", align = "llcccccc", escape = FALSE) |>
+  column_spec(1:8, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(c(2, 4, 6, 8, 10, 14, 16, 18, 20, 22), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top") |>
+  pack_rows(index = c("Software startup" = 12, "Healthcare startup" = 12), indent = FALSE,
+            label_row_css = "text-align: center;") |>
+  kable_styling() |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Processing ease was measured on a scale from 0–100, all other outcomes on 1–7 scales. Simplicity is the reverse-coded complexity rating. Two-sided independent-samples t-tests.
+:::
+:::
+
+::: {#mc-table-A2}
+```{r}
+#| label: validation-table-A2
+
+mc_A2 <- bind_rows(mc_ql_sw, mc_ql_hc)
+data.frame(
+  Outcome = rep(rep(c("Intellectual property", "Human capital", "Commercialization opportunity",
+                      "Organizational legitimacy", "Perceived venture quality", "Processing ease"), 2), each = 2),
+  Condition = rep(c("High", "Low"), 12),
+  N = c(rbind(mc_A2$n_high, mc_A2$n_low)),
+  Mean = f2(c(rbind(mc_A2$mean_high, mc_A2$mean_low))),
+  SD = weights::rd(c(rbind(mc_A2$sd_high, mc_A2$sd_low)), 3),
+  t = c(rbind(paste0("t(", mc_A2$df_txt, ") = ", f2(mc_A2$t)), "")),
+  p = c(rbind(p_tbl(mc_A2$p), "")),
+  d = c(rbind(weights::rd(mc_A2$d, 2), ""))
+) |>
+  kbl(col.names = c("Outcome", "Quality condition", "N", "Mean", "SD", "t-test", "p", "Cohen’s d"),
+      caption = "Table A2: Manipulation checks, substantive quality", align = "llcccccc", escape = FALSE) |>
+  column_spec(1:8, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(c(2, 4, 6, 8, 10, 14, 16, 18, 20, 22), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top") |>
+  pack_rows(index = c("Software startup" = 12, "Healthcare startup" = 12), indent = FALSE,
+            label_row_css = "text-align: center;") |>
+  kable_styling() |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Processing ease was measured on a scale from 0–100, all other outcomes on 1–7 scales. The intellectual-property item measured organizational capital. Two-sided independent-samples t-tests.
+:::
+:::
+
+::: {#mc-figure-A2}
+```{r}
+#| label: validation-figure-A2
+#| fig-cap: "Figure A2: Summary of the fluency manipulation checks for the software startup"
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+
+mc_d <- mc_design_sw
+
+# change factor labels for fluency
+mc_d$fluency_condition <- factor(mc_d$fluency_condition, levels = c("high", "low"), labels = c("High", "Low"))
+
+# create long dataset for plot
+mc_long <- mc_d |> select(contrast:symmetry, fluency, quality, fluency_condition) |>
+  tidyr::pivot_longer(contrast:quality, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+mc_str_contrast <- mc_ttest_str(contrast ~ fluency_condition, data = mc_d)
+mc_str_clarity <- mc_ttest_str(clarity ~ fluency_condition, data = mc_d)
+mc_str_symmetry <- mc_ttest_str(symmetry ~ fluency_condition, data = mc_d)
+mc_str_simplicity <- mc_ttest_str(simplicity ~ fluency_condition, data = mc_d)
+mc_str_fluency <- mc_ttest_str(fluency ~ fluency_condition, data = mc_d)
+mc_str_quality <- mc_ttest_str(quality ~ fluency_condition, data = mc_d)
+
+mc_str_fluency <- stringr::str_replace(mc_str_fluency, "Fluency", "Processing ease")
+mc_str_quality <- stringr::str_replace(mc_str_quality, "Quality", "Perceived venture quality")
+
+mc_long$measure <- factor(mc_long$measure, levels = c("contrast", "clarity", "symmetry", "simplicity", "fluency", "quality"),
+                          labels = c(mc_str_contrast, mc_str_clarity, mc_str_symmetry, mc_str_simplicity, mc_str_fluency, mc_str_quality))
+
+mc_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                   .default = 1),
+                  ymax = case_when(measure == "fluency" ~ 100,
+                                   .default = 7
+                  )) -> mc_long
+
+# plot result
+ggplot(mc_long, aes(x=fluency_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = ggtext::element_markdown(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Visual fluency (software startup)",
+       subtitle = "Effect of the low vs. high fluency pitch deck versions on various outcomes",
+       x = "Pitch deck visual fluency",
+       y = NULL,
+       caption = paste0("<i>Note:</i> ", "(Jittered) raw values and group means are shown (n = ", nrow(mc_d), ")."))
+```
+:::
+
+::: {#mc-figure-A3}
+```{r}
+#| label: validation-figure-A3
+#| fig-cap: "Figure A3: Summary of the quality manipulation checks for the software startup"
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+
+mc_d <- mc_quality_sw
+
+# create long dataset for plot
+mc_long <- mc_d |> select(intell_prop:legitim, quality, fluency, quality_condition) |>
+  tidyr::pivot_longer(intell_prop:fluency, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+mc_str_intell_prop <- mc_ttest_str(intell_prop ~ quality_condition, data = mc_d)
+mc_str_hum_cap <- mc_ttest_str(hum_cap ~ quality_condition, data = mc_d)
+mc_str_commerc <- mc_ttest_str(commerc ~ quality_condition, data = mc_d)
+mc_str_legitim <- mc_ttest_str(legitim ~ quality_condition, data = mc_d)
+mc_str_quality <- mc_ttest_str(quality ~ quality_condition, data = mc_d)
+mc_str_fluency <- mc_ttest_str(fluency ~ quality_condition, data = mc_d)
+
+mc_str_intell_prop <- stringr::str_replace(mc_str_intell_prop, "Intell_prop", "Intellectual property")
+mc_str_hum_cap <- stringr::str_replace(mc_str_hum_cap, "Hum_cap", "Human capital")
+mc_str_commerc <- stringr::str_replace(mc_str_commerc, "Commerc", "Commercialization opportunity")
+mc_str_legitim <- stringr::str_replace(mc_str_legitim, "Legitim", "Organizational legitimacy")
+mc_str_quality <- stringr::str_replace(mc_str_quality, "Quality", "Perceived venture quality")
+mc_str_fluency <- stringr::str_replace(mc_str_fluency, "Fluency", "Processing ease")
+
+mc_long$measure <- factor(mc_long$measure, levels = c("intell_prop", "hum_cap", "commerc", "legitim","quality",  "fluency"),
+                          labels = c(mc_str_intell_prop, mc_str_hum_cap, mc_str_commerc, mc_str_legitim, mc_str_quality, mc_str_fluency))
+
+# create ymin and ymax for plot
+mc_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                   .default = 1),
+                  ymax = case_when(measure == "fluency" ~ 100,
+                                   .default = 7
+)) -> mc_long
+
+# plot result
+ggplot(mc_long, aes(x=quality_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = ggtext::element_markdown(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Substantive quality (software startup)",
+       subtitle = "Effect of the low vs. high quality pitch deck versions on various outcomes",
+       x = "Pitch deck substantive quality",
+       y = NULL,
+       caption = paste0("<i>Note:</i> ", "(Jittered) raw values and group means are shown (n = ", nrow(mc_d), ")."))
+```
+:::
+
+::: {#mc-figure-A4}
+```{r}
+#| label: validation-figure-A4
+#| fig-cap: "Figure A4: Summary of the fluency manipulation checks for the healthcare startup"
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+
+mc_d <- mc_design_hc
+
+# create long dataset for plot
+mc_long <- mc_d |> select(contrast:symmetry, fluency, quality, fluency_condition) |>
+  tidyr::pivot_longer(contrast:quality, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+mc_str_contrast <- mc_ttest_str(contrast ~ fluency_condition, data = mc_d)
+mc_str_clarity <- mc_ttest_str(clarity ~ fluency_condition, data = mc_d)
+mc_str_symmetry <- mc_ttest_str(symmetry ~ fluency_condition, data = mc_d)
+mc_str_simplicity <- mc_ttest_str(simplicity ~ fluency_condition, data = mc_d)
+mc_str_fluency <- mc_ttest_str(fluency ~ fluency_condition, data = mc_d)
+mc_str_quality <- mc_ttest_str(quality ~ fluency_condition, data = mc_d)
+
+mc_str_fluency <- stringr::str_replace(mc_str_fluency, "Fluency", "Processing ease")
+mc_str_quality <- stringr::str_replace(mc_str_quality, "Quality", "Perceived venture quality")
+
+mc_long$measure <- factor(mc_long$measure, levels = c("contrast", "clarity", "symmetry", "simplicity", "fluency", "quality"),
+                          labels = c(mc_str_contrast, mc_str_clarity, mc_str_symmetry, mc_str_simplicity, mc_str_fluency, mc_str_quality))
+
+mc_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                   .default = 1),
+                  ymax = case_when(measure == "fluency" ~ 100,
+                                   .default = 7
+                  )) -> mc_long
+
+# plot result
+ggplot(mc_long, aes(x=fluency_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = ggtext::element_markdown(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Visual fluency (healthcare startup)",
+       subtitle = "Effect of the low vs. high fluency pitch deck versions on various outcomes",
+       x = "Pitch deck visual fluency",
+       y = NULL,
+       caption = paste0("<i>Note:</i> ", "(Jittered) raw values and group means are shown (n = ", nrow(mc_d), ")."))
+```
+:::
+
+::: {#mc-figure-A5}
+```{r}
+#| label: validation-figure-A5
+#| fig-cap: "Figure A5: Summary of the quality manipulation checks for the healthcare startup"
+#| fig-width: 10
+#| fig-asp: .666
+#| out-width: 100%
+
+mc_d <- mc_quality_hc
+
+# create long dataset for plot
+mc_long <- mc_d |> select(intell_prop:legitim, quality, fluency, quality_condition) |>
+  tidyr::pivot_longer(intell_prop:fluency, names_to="measure", values_to="value")
+
+# create labels that include statistical inference
+mc_str_intell_prop <- mc_ttest_str(intell_prop ~ quality_condition, data = mc_d)
+mc_str_hum_cap <- mc_ttest_str(hum_cap ~ quality_condition, data = mc_d)
+mc_str_commerc <- mc_ttest_str(commerc ~ quality_condition, data = mc_d)
+mc_str_legitim <- mc_ttest_str(legitim ~ quality_condition, data = mc_d)
+mc_str_quality <- mc_ttest_str(quality ~ quality_condition, data = mc_d)
+mc_str_fluency <- mc_ttest_str(fluency ~ quality_condition, data = mc_d)
+
+mc_str_intell_prop <- stringr::str_replace(mc_str_intell_prop, "Intell_prop", "Intellectual property")
+mc_str_hum_cap <- stringr::str_replace(mc_str_hum_cap, "Hum_cap", "Human capital")
+mc_str_commerc <- stringr::str_replace(mc_str_commerc, "Commerc", "Commercialization opportunity")
+mc_str_legitim <- stringr::str_replace(mc_str_legitim, "Legitim", "Organizational legitimacy")
+mc_str_quality <- stringr::str_replace(mc_str_quality, "Quality", "Perceived venture quality")
+mc_str_fluency <- stringr::str_replace(mc_str_fluency, "Fluency", "Processing ease")
+
+mc_long$measure <- factor(mc_long$measure, levels = c("intell_prop", "hum_cap", "commerc", "legitim","quality",  "fluency"),
+                          labels = c(mc_str_intell_prop, mc_str_hum_cap, mc_str_commerc, mc_str_legitim, mc_str_quality, mc_str_fluency))
+
+# create ymin and ymax for plot
+mc_long |> mutate(ymin = case_when(measure == "fluency" ~ 0,
+                                   .default = 1),
+                  ymax = case_when(measure == "fluency" ~ 100,
+                                   .default = 7
+)) -> mc_long
+
+# plot result
+ggplot(mc_long, aes(x=quality_condition, y=value)) +
+  geom_point(size = 2.5, alpha = 0.25, position=position_jitter(.1, seed = 42)) +
+  stat_summary(color = "darkred", geom = "errorbar",
+               fun.min = mean, fun = mean, fun.max = mean,
+               width = .5, linewidth = 0.75) +
+  facet_wrap(vars(measure), ncol = 3, scales = "free_y") +
+  scale_x_discrete(limits = rev) +
+  geom_blank(aes(y = ymin)) +
+  geom_blank(aes(y = ymax)) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        plot.margin=grid::unit(c(1,0,3,0), "mm"),
+        axis.title.x = element_text(hjust=0.5, margin=margin(t=15), size = 12, face = "bold"),
+        axis.title.y = element_text(hjust=0.5),
+        plot.caption = ggtext::element_markdown(hjust=0, size = 10)
+  ) +
+  labs(title="Manipulation check: Substantive quality (healthcare startup)",
+       subtitle = "Effect of the low vs. high quality pitch deck versions on various outcomes",
+       x = "Pitch deck substantive quality",
+       y = NULL,
+       caption = paste0("<i>Note:</i> ", "(Jittered) raw values and group means are shown (n = ", nrow(mc_d), ")."))
+```
+:::

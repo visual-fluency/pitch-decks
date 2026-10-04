@@ -1,0 +1,473 @@
+---
+title: "Reproducibility Report"
+subtitle: "Ease and Evidence: Visual Fluency in Screening"
+authors:
+  - name: "*blinded for review*"
+    affiliations:
+      - name: "*blinded for review*"
+number-sections: true
+format:
+  html:
+    theme: journal
+    toc: true
+    page-layout: full
+    code-fold: true
+    code-tools:
+      source: true
+    code-line-numbers: true
+    embed-resources: true
+    self-contained-math: true
+execute:
+  warning: false
+  message: false
+---
+
+<!--
+# Last update: 2026-09-30
+# Author: <blinded for review>
+-->
+
+# Introduction {#sec-intro}
+
+This report reproduces the results, tables, and figures of the paper and its appendix. Its sections follow the order of the paper, and its hypotheses, tables, and figures are numbered as in the paper and its appendix. Each section starts from the processed data of the respective study. The detailed reproducibility report of each study, linked at the beginning of each section, documents how the raw data were processed and which participants and observations were excluded, and it reports the full models and further analyses.
+
+As this report is dynamically created with R and Quarto, we also report all code.
+However, for readability, code is hidden by default and only the relevant results are shown.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+# setup
+library(here)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggtext)
+library(patchwork)
+library(kableExtra)
+options(knitr.kable.NA = '',
+        kable_styling_bootstrap_options = c("striped", "condensed", "responsive"))
+
+# further packages that are loaded on demand are:
+# - readr
+# - tidyr
+# - stringr
+# - forcats
+# - weights
+# - scales
+# - car
+# - rstatix
+# - supernova
+# - afex
+# - BayesFactor
+# - lme4
+# - lmerTest
+# - performance
+# - marginaleffects
+# - AER
+# - irr
+# - hrbrthemes
+# - ggsankey
+# - purrr
+# - grid
+
+# set option to disable showing the column types when loading data with `readr`
+options("readr.show_col_types" = FALSE)
+
+# folders of the processed and the raw data
+processed_dir <- 'reproducibility_reports/data'
+raw_dir <- 'reproducibility_reports/data'
+
+# colors
+blue_main <- "#297FB8"
+blue_dark <- "#2D3E50"
+blue_light <- "#A0ABBF"
+
+
+# Custom functions
+#
+# two decimals
+f2 <- function(x) sprintf('%.2f', x)
+#
+# p-value in the text, e.g., "p = .663" or "p < .001"
+p_txt <- function(p) ifelse(p < .001, "*p* < .001", paste0("*p* = ", weights::rd(p, 3)))
+#
+# p-value in a table
+p_tbl <- function(p) ifelse(p < .001, "&lt; .001", weights::rd(p, 3))
+#
+# 95% confidence interval, e.g., "[2.14, 5.73]"
+ci_txt <- function(lower, upper) paste0("[", f2(lower), ", ", f2(upper), "]")
+#
+# format a Bayes factor (values above 1,000 in scientific notation,
+# e.g., 1.16 × 10^4)
+bf_fmt <- function(bf){
+  ifelse(bf > 1000,
+         paste0(sprintf('%.2f', bf / 10^floor(log10(bf))), " × 10<sup>", floor(log10(bf)), "</sup>"),
+         sprintf('%.2f', bf))
+}
+#
+# one-sample t-test of a participant-level contrast against zero: N, mean,
+# two-sided 95% confidence interval, and p-value of the requested test
+# -Note: NAs (participants without a valid contrast) are removed before the test
+contrast_test <- function(x, alternative = "two.sided"){
+  x <- x[!is.na(x)]
+  tres <- t.test(x, mu = 0, alternative = alternative)
+  cres <- t.test(x, mu = 0, alternative = "two.sided")
+  data.frame(N = length(x), estimate = mean(x), lower = cres$conf.int[1],
+             upper = cres$conf.int[2], p = tres$p.value)
+}
+#
+# model-based difference between the high and the low condition in a
+# mixed-effects model with effect coding (i.e., two times the coefficient),
+# with its 95% confidence interval and two-sided p-value (Satterthwaite's
+# degrees of freedom)
+lmer_diff <- function(model, term){
+  fe <- coef(summary(model))[term, ]
+  data.frame(estimate = 2 * fe[["Estimate"]],
+             lower = 2 * (fe[["Estimate"]] - qt(.975, fe[["df"]]) * fe[["Std. Error"]]),
+             upper = 2 * (fe[["Estimate"]] + qt(.975, fe[["df"]]) * fe[["Std. Error"]]),
+             p = fe[["Pr(>|t|)"]])
+}
+#
+# repeat the column headers above each row group of a table (`last_labels`:
+# other labels above the last group, e.g., c("p" = "p (TOST)"))
+repeat_header <- function(tbl, last_labels = NULL){
+  html <- as.character(tbl)
+  header <- sub("(?s).*<thead>(.*)</thead>.*", "\\1", html, perl = TRUE)
+  header <- gsub('<th style="', '<th style="box-shadow: none; ', header, fixed = TRUE)
+  groups <- gregexpr('<tr grouplength=', html, ignore.case = TRUE)[[1]]
+  for(pos in rev(groups[-1])){
+    h <- header
+    if(pos == max(groups)) for(old in names(last_labels)){
+      h <- sub(paste0(">\\s*", old, "\\s*<"), paste0(">", last_labels[[old]], "<"), h, perl = TRUE)
+    }
+    html <- paste0(substr(html, 1, pos - 1), h, substr(html, pos, nchar(html)))
+  }
+  attributes(html) <- attributes(tbl)
+  return(html)
+}
+#
+# two-sided independent-samples t-test of the high vs. the low condition (Welch's test
+# if the median-centered Levene test is significant at .05) with Cohen's d
+mc_ttest <- function(formula, data){
+  # check for homogeneous group variances (Levene's test, centered at the median)
+  var_equal <- car::leveneTest(formula, data = data)$`Pr(>F)`[1] >= .05
+  # perform t-test and extract Cohen's d
+  tres <- t.test(formula, data = data, var.equal = var_equal)
+  dres <- rstatix::cohens_d(formula, data = data, var.equal = var_equal)
+  # condition means and SDs (high condition first)
+  means <- aggregate(formula, data = data, FUN = mean)[, 2]
+  sds <- aggregate(formula, data = data, FUN = sd)[, 2]
+  # construct return df (degrees of freedom of Welch's test with one decimal)
+  data.frame(n_high = dres$n1, n_low = dres$n2, mean_high = means[1], mean_low = means[2],
+             sd_high = sds[1], sd_low = sds[2], t = tres$statistic[["t"]],
+             df_txt = ifelse(var_equal, as.character(tres$parameter[["df"]]), weights::rd(tres$parameter[["df"]], 1)),
+             p = tres$p.value, d = dres$effsize[[1]])
+}
+#
+# condition means and t-test in the text, e.g., "M_high = 66.27, M_low = 46.69,
+# t(98) = 3.65, p < .001, d = .73"
+mc_ttest_txt <- function(res){
+  paste0("*M*<sub>high</sub> = ", f2(res$mean_high), ", *M*<sub>low</sub> = ", f2(res$mean_low),
+         ", *t*(", res$df_txt, ") = ", f2(res$t), ", ", p_txt(res$p), ", *d* = ", weights::rd(res$d, 2))
+}
+#
+# t-test as a figure label (outcome, t-test, p-value, and Cohen's d)
+mc_ttest_str <- function(formula, data){
+  res <- mc_ttest(formula, data)
+  dv <- stringr::str_match(deparse(formula), '[^ ~]*')
+  paste0(stringr::str_to_sentence(dv), "\nt(", res$df_txt, ") = ", f2(res$t),
+         ", p", ifelse(res$p < .001, " < .001", paste0(" = ", weights::rd(res$p, 3))),
+         "; d = ", weights::rd(res$d, 2))
+}
+#
+# model-based difference between the high and the low condition in a linear
+# model with effect coding (two times the coefficient, four times for an
+# interaction), with its 95% confidence interval and two-sided p-value
+lm_diff <- function(model, term, multiplier = 2){
+  fe <- coef(summary(model))[term, ]
+  ci <- confint(model)[term, ]
+  data.frame(estimate = multiplier * fe[["Estimate"]], lower = multiplier * ci[[1]],
+             upper = multiplier * ci[[2]], p = fe[["Pr(>|t|)"]])
+}
+#
+# type III ANOVA of a linear model: SS, df, residual df, F, p, and partial eta
+# squared of each effect
+anova_3 <- function(model){
+  tbl <- supernova::supernova(model, type = 3)$tbl
+  effects <- !(tbl$term %in% c("Model", "Error", "Total"))
+  data.frame(SS = tbl$SS[effects], df = tbl$df[effects], df_res = tbl$df[tbl$term == "Error"],
+             F = tbl$F[effects], p = tbl$p[effects], eta = tbl$PRE[effects])
+}
+#
+# t-test of the high vs. the low condition (factor levels "high", "low"; Student's
+# or Welch's test, depending on Levene's test): means, difference, 95% CI, t, df, p
+ttest_diff <- function(formula, data){
+  var.equal <- car::leveneTest(formula, data = data)$`Pr(>F)`[1] >= .05
+  tres <- t.test(formula, data = data, var.equal = var.equal)
+  data.frame(low = tres$estimate[[2]], high = tres$estimate[[1]],
+             estimate = tres$estimate[[1]] - tres$estimate[[2]],
+             lower = tres$conf.int[1], upper = tres$conf.int[2],
+             t = tres$statistic[[1]], df = tres$parameter[[1]], p = tres$p.value)
+}
+#
+# coefficients (estimate, SE, t, p) of the given terms of a linear model,
+# followed by R² and adjusted R², formatted for a table
+lm_tbl <- function(model, terms, labels){
+  cf <- coef(summary(model))[terms, , drop = FALSE]
+  data.frame(Term = c(labels, "R<sup>2</sup>", "R<sup>2</sup><sub>adj.</sub>"),
+             Coeff = c(f2(cf[, "Estimate"]), weights::rd(summary(model)$r.squared, 3),
+                       weights::rd(summary(model)$adj.r.squared, 3)),
+             SE = c(sprintf('%.3f', cf[, "Std. Error"]), "", ""),
+             t = c(f2(cf[, "t value"]), "", ""),
+             p = c(p_tbl(cf[, "Pr(>|t|)"]), "", ""))
+}
+#
+# prepare the LLM ratings: numeric ratings and, for the items of the human
+# visual questionnaire, simplicity as the reverse-coded complexity item (8 - complexity)
+llm_prep <- function(d){
+  d$rating <- as.numeric(d$rating)
+  d_simplicity <- d |> filter(item == "complex") |> mutate(item = "simplicity", rating = 8 - rating)
+  bind_rows(d, d_simplicity) |> filter(!is.na(rating))
+}
+#
+# high vs. low condition of a factor at the level of the startups: condition means
+# (across models, repetitions, and the other factor), mean of the startup-level
+# differences, percentile bootstrap 95% CI (4,000 resamples), Cohen's d_z, and the
+# exact two-sided Wilcoxon signed-rank test
+# -Note: since R 4.6.0, the exact p-value is also computed for tied differences
+llm_contrast <- function(d, item, factor, high, low){
+  # mean rating per startup and condition
+  cells <- d[d$item == item & d[[factor]] %in% c(high, low), ] |>
+    group_by(startup, level = .data[[factor]]) |>
+    summarize(rating = mean(rating), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = level, values_from = rating) |>
+    tidyr::drop_na()
+  diffs <- cells[[high]] - cells[[low]]
+  # percentile bootstrap 95% CI of the mean difference
+  set.seed(0)
+  boot <- replicate(4000, mean(sample(sort(diffs), replace = TRUE)))
+  ci <- quantile(boot, c(.025, .975), names = FALSE)
+  # exact Wilcoxon signed-rank test (two-sided)
+  wres <- wilcox.test(cells[[high]], cells[[low]], paired = TRUE, exact = TRUE)
+  # construct return df
+  data.frame(n = nrow(cells), high = mean(cells[[high]]), low = mean(cells[[low]]),
+             estimate = mean(diffs), lower = ci[1], upper = ci[2],
+             d = mean(diffs) / sd(diffs), p = wres$p.value)
+}
+#
+# intraclass correlations of a matrix of ratings (rows = rated decks, columns =
+# raters): ICC(2,1) and ICC(2,k), two-way random effects, absolute agreement
+llm_icc <- function(m){
+  m <- as.matrix(m)
+  m <- m[complete.cases(m), ]
+  n <- nrow(m); k <- ncol(m); g <- mean(m)
+  # mean squares of the rows (decks), the columns (raters), and the residuals
+  ms_rows <- k * sum((rowMeans(m) - g)^2) / (n - 1)
+  ms_cols <- n * sum((colMeans(m) - g)^2) / (k - 1)
+  ms_error <- sum((m - outer(rowMeans(m), colMeans(m), "+") + g)^2) / ((n - 1) * (k - 1))
+  # construct return vector
+  c(icc_1 = (ms_rows - ms_error) / (ms_rows + (k - 1) * ms_error + k * (ms_cols - ms_error) / n),
+    icc_k = (ms_rows - ms_error) / (ms_rows + (ms_cols - ms_error) / n))
+}
+#
+# quadratic-weighted Cohen's kappa of two raters for the categories 1 to 7 (NA if
+# both raters give all decks the same rating)
+llm_kappa <- function(a, b, categories = 1:7){
+  obs <- table(factor(a, levels = categories), factor(b, levels = categories))
+  expected <- outer(rowSums(obs), colSums(obs)) / sum(obs)
+  weights <- outer(categories, categories, function(i, j) (i - j)^2) / (length(categories) - 1)^2
+  if(sum(weights * expected) == 0) return(NA)
+  1 - sum(weights * obs) / sum(weights * expected)
+}
+#
+# agreement between the models for a set of items: ICC(2,1) and ICC(2,k) of the
+# scale mean per deck and model, and the weighted kappa averaged across all pairs
+# of models and the items (per item, a model's three ratings are averaged and rounded)
+llm_reliability <- function(d, items){
+  # scale mean per deck and model
+  m <- d |> filter(item %in% items) |>
+    group_by(file, model) |> summarize(rating = mean(rating), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = model, values_from = rating) |>
+    tidyr::drop_na()
+  icc <- llm_icc(m[, -1])
+  # rounded mean rating per item, deck, and model
+  r <- d |> filter(item %in% items) |>
+    group_by(item, file, model) |>
+    summarize(rating = pmin(pmax(round(mean(rating)), 1), 7), .groups = "drop")
+  pairs <- combn(sort(unique(r$model)), 2)
+  kappas <- unlist(lapply(items, function(it){
+    w <- r |> filter(item == it) |> select(-item) |>
+      tidyr::pivot_wider(names_from = model, values_from = rating) |> tidyr::drop_na()
+    apply(pairs, 2, function(p) llm_kappa(w[[p[1]]], w[[p[2]]]))
+  }))
+  # construct return df
+  data.frame(decks = nrow(m), models = ncol(m) - 1, icc_1 = icc[["icc_1"]],
+             icc_k = icc[["icc_k"]], kappa = mean(kappas, na.rm = TRUE),
+             pairs = length(kappas), undefined = sum(is.na(kappas)))
+}
+#
+# three decimals, e.g., "-0.421"
+bm_f3 <- function(x) sprintf('%.3f', x)
+#
+# 95% confidence interval with three decimals, e.g., "[-0.515, -0.328]"
+bm_ci3 <- function(lower, upper) paste0("[", bm_f3(lower), ", ", bm_f3(upper), "]")
+#
+# correlation with three decimals and without a leading zero, e.g., ".153"
+bm_r <- function(x) weights::rd(x, 3)
+#
+# 95% confidence interval of a correlation, e.g., "[.121, .186]"
+bm_ci_r <- function(lower, upper) paste0("[", bm_r(lower), ", ", bm_r(upper), "]")
+#
+# Pearson correlation with its 95% confidence interval and two-sided p-value
+bm_cor <- function(x, y){
+  res <- cor.test(x, y)
+  data.frame(r = res$estimate[["cor"]], lower = res$conf.int[1], upper = res$conf.int[2], p = res$p.value)
+}
+#
+# range of the ratings across the three prompt versions (per deck)
+bm_prompt_range <- function(d, cols){
+  apply(d[, cols], 1, function(x) max(x) - min(x))
+}
+#
+# Welch two-sample t-test (first minus second group): N of both groups, mean
+# difference, two-sided 95% confidence interval, and p-value of the requested
+# test
+# -Note: NAs (participants without a valid contrast) are removed before the test
+welch_test <- function(x, y, alternative = "two.sided"){
+  x <- x[!is.na(x)]
+  y <- y[!is.na(y)]
+  tres <- t.test(x, y, alternative = alternative, var.equal = FALSE)
+  cres <- t.test(x, y, alternative = "two.sided", var.equal = FALSE)
+  data.frame(N_1 = length(x), N_2 = length(y), estimate = mean(x) - mean(y),
+             lower = cres$conf.int[1], upper = cres$conf.int[2], p = tres$p.value)
+}
+#
+# difference implied by a coefficient of a mixed-effects model with effect
+# coding (multiplier times the coefficient, i.e., 4 for a two-way and 8 for a
+# three-way interaction), with its 95% confidence interval and two-sided
+# p-value (Satterthwaite's degrees of freedom)
+lmer_multi <- function(model, term, multiplier){
+  fe <- coef(summary(model))[term, ]
+  data.frame(estimate = multiplier * fe[["Estimate"]],
+             lower = multiplier * (fe[["Estimate"]] - qt(.975, fe[["df"]]) * fe[["Std. Error"]]),
+             upper = multiplier * (fe[["Estimate"]] + qt(.975, fe[["df"]]) * fe[["Std. Error"]]),
+             p = fe[["Pr(>|t|)"]])
+}
+#
+# odds ratio (high vs. low) of a factor with effect coding in a mixed logistic
+# regression (i.e., exp(2 × coefficient)), with its 95% Wald confidence
+# interval and two-sided p-value
+glmer_or <- function(model, term){
+  fe <- coef(summary(model))[term, ]
+  data.frame(estimate = exp(2 * fe[["Estimate"]]),
+             lower = exp(2 * (fe[["Estimate"]] - qnorm(.975) * fe[["Std. Error"]])),
+             upper = exp(2 * (fe[["Estimate"]] + qnorm(.975) * fe[["Std. Error"]])),
+             p = fe[["Pr(>|z|)"]])
+}
+#
+# preregistered analysis of the fluency contrast in the disclosure condition
+# (x): N, mean, 95% confidence interval, two-sided p-value, Bayes factor
+# (Cauchy prior, r = 0.707), 90% confidence interval, p-value of the
+# equivalence test (the larger p-value of the two one-sided tests against
+# -bound and +bound), p-value of the Welch comparison with the control
+# condition (x_control, two-sided), and case (1 to 5) and outcome of the
+# preregistered decision rule
+h4_tests <- function(x, x_control, bound = 0.225){
+  # remove missing values
+  x <- x[!is.na(x)]
+  x_control <- x_control[!is.na(x_control)]
+  # two-sided test against zero, 90% confidence interval, and Bayes factor
+  tres <- t.test(x, mu = 0, alternative = "two.sided")
+  ci90 <- t.test(x, mu = 0, conf.level = .90)$conf.int
+  bf10 <- BayesFactor::extractBF(BayesFactor::ttestBF(x = x, mu = 0, rscale = 0.707))$bf
+  # equivalence test (two one-sided tests)
+  p_tost <- max(t.test(x, mu = -bound, alternative = "greater")$p.value,
+                t.test(x, mu = bound, alternative = "less")$p.value)
+  # control vs. disclosure (Welch t-test, two-sided)
+  cres <- t.test(x_control, x, alternative = "two.sided", var.equal = FALSE)
+  # decision rule (cases in the preregistered order)
+  est <- mean(x)
+  case <- case_when(tres$p.value < .05 & est <= -bound ~ 1,
+                    tres$p.value < .05 & est >= bound ~ 2,
+                    p_tost < .05 & cres$p.value < .05 & mean(x_control) > est ~ 3,
+                    tres$p.value < .05 & est > 0 & p_tost >= .05 ~ 4,
+                    TRUE ~ 5)
+  outcome <- c("overcorrection", "persistence supported", "switched off",
+               "reduced but present", "indeterminate")[case]
+  data.frame(N = length(x), estimate = est, lower = tres$conf.int[1], upper = tres$conf.int[2],
+             p = tres$p.value, bf10 = bf10, lower_90 = ci90[1], upper_90 = ci90[2],
+             p_tost = p_tost, p_control = cres$p.value, case = case, outcome = outcome)
+}
+#
+# coefficients of a linear, logit, or Tobit model with standard errors, 95%
+# confidence intervals (t-based for linear models, Wald otherwise), test
+# statistics, and two-sided p-values
+reg_coefs <- function(model){
+  est <- coef(summary(model))
+  est <- est[rownames(est) != "Log(scale)", , drop = FALSE]
+  if(inherits(model, c("glm", "tobit"))) crit <- qnorm(.975) else crit <- qt(.975, model$df.residual)
+  data.frame(term = rownames(est), estimate = est[, 1], se = est[, 2],
+             lower = est[, 1] - crit * est[, 2], upper = est[, 1] + crit * est[, 2],
+             statistic = est[, 3], p = est[, 4], row.names = NULL)
+}
+#
+# k times a model coefficient (e.g., the high-minus-low contrast of an
+# effect-coded factor) with its 95% confidence interval and two-sided p-value;
+# for logit models, the result is exponentiated (odds ratio)
+coef_contrast <- function(model, term, k){
+  res <- reg_coefs(model)
+  res <- res[res$term == term, ]
+  out <- data.frame(estimate = k * res$estimate, lower = k * res$lower, upper = k * res$upper,
+                    statistic = res$statistic, p = res$p)
+  if(inherits(model, "glm")) out[c("estimate", "lower", "upper")] <- exp(out[c("estimate", "lower", "upper")])
+  return(out)
+}
+#
+# high-minus-low difference of the model-based probabilities of `variable`
+# (balanced grid, equal weights over the other factors) in percentage points,
+# with its delta-method 95% confidence interval and two-sided p-value; `by` and
+# `hypothesis` as in marginaleffects::avg_comparisons()
+pp_contrast <- function(model, variable, by = TRUE, hypothesis = NULL){
+  res <- marginaleffects::avg_comparisons(model, variables = setNames(list(c("low", "high")), variable),
+                                          by = by, hypothesis = hypothesis, type = "response",
+                                          newdata = marginaleffects::datagrid(model = model, grid_type = "balanced"))
+  data.frame(estimate = 100 * res$estimate, lower = 100 * res$conf.low, upper = 100 * res$conf.high,
+             statistic = res$statistic, p = res$p.value)
+}
+#
+# coefficient rows of a regression table, with the terms relabeled and ordered
+# as in `labels` (named vector) and estimates with `digits` decimals
+coef_rows <- function(model, labels, digits = 2){
+  res <- reg_coefs(model)
+  res <- res[match(names(labels), res$term), ]
+  fmt <- paste0('%.', digits, 'f')
+  data.frame(Term = unname(labels), Estimate = sprintf(fmt, res$estimate), SE = sprintf('%.3f', res$se),
+             CI = paste0("[", sprintf(fmt, res$lower), ", ", sprintf(fmt, res$upper), "]"),
+             Statistic = f2(res$statistic), p = p_tbl(res$p))
+}
+#
+# count with its percentage of n, e.g., "331 (7.4%)"
+n_pct <- function(x, n) paste0(scales::comma(x), " (", sprintf('%.1f', 100 * x / n), "%)")
+#
+# mean with its standard deviation, e.g., "1.84 (3.80)"
+mean_sd <- function(x) paste0(f2(mean(x)), " (", f2(sd(x)), ")")
+```
+
+{{< include reproducibility_report/_Research_Design.qmd >}}
+
+{{< include reproducibility_report/_Validation.qmd >}}
+
+{{< include reproducibility_report/_Validation_LLM.qmd >}}
+
+{{< include reproducibility_report/_Benchmark.qmd >}}
+
+{{< include reproducibility_report/_Study_1.qmd >}}
+
+{{< include reproducibility_report/_Studies_2.qmd >}}
+
+{{< include reproducibility_report/_Study_3.qmd >}}
+
+{{< include reproducibility_report/_Study_4.qmd >}}

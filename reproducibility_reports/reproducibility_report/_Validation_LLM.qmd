@@ -1,0 +1,396 @@
+## LLM checks of the pitch decks {#sec-validation-llm}
+
+The LLM ratings, the prompts, and further analyses are documented in the [LLM Ratings Reproducibility Report](Detailed_Report_2_LLM_Ratings.qmd).
+
+```{r}
+#| label: validation-llm-analyses
+
+# LLM checks of the pitch decks (not preregistered)
+#
+# ratings (one row per call and item), pitch decks of Studies 3 and 4: items of
+# the human visual and quality questionnaires and the additional visual questions
+llm_flu <- readr::read_csv(here(raw_dir, 'LLM_Panel_Studies_3_4_Decks_Fluency_Items.csv')) |> llm_prep()
+llm_qua <- readr::read_csv(here(raw_dir, 'LLM_Panel_Studies_3_4_Decks_Quality_Items.csv')) |> llm_prep()
+llm_vis <- readr::read_csv(here(raw_dir, 'LLM_Panel_Studies_3_4_Decks_Specific_Visual_Items.csv')) |> llm_prep()
+# single-factor decks of the manipulation checks
+llm_flu_mc <- readr::read_csv(here(raw_dir, 'LLM_Panel_MC_Decks_Fluency_Items.csv')) |> llm_prep()
+llm_qua_mc <- readr::read_csv(here(raw_dir, 'LLM_Panel_MC_Decks_Quality_Items.csv')) |> llm_prep()
+llm_vis_mc <- readr::read_csv(here(raw_dir, 'LLM_Panel_MC_Decks_Specific_Visual_Items.csv')) |> llm_prep()
+# modified decks: text removed (visual questionnaire) and visual design removed
+# (quality questionnaire)
+llm_flu_notext <- readr::read_csv(here(raw_dir, 'LLM_Panel_Text_Removed_Fluency_Items.csv')) |> llm_prep()
+llm_qua_nodesign <- readr::read_csv(here(raw_dir, 'LLM_Panel_Design_Removed_Quality_Items.csv')) |> llm_prep()
+# human manipulation checks (processed data), pooled across both startups
+llm_mc_design <- bind_rows(readr::read_csv(here(processed_dir, 'MC_1_Design_Software.csv')),
+                           readr::read_csv(here(processed_dir, 'MC_3_Design_Healthcare.csv')))
+llm_mc_quality <- bind_rows(readr::read_csv(here(processed_dir, 'MC_2_Quality_Software.csv')),
+                            readr::read_csv(here(processed_dir, 'MC_4_Quality_Healthcare.csv')))
+
+# model names for the figure
+llm_model_labels <- c("anthropic/claude-sonnet-5" = "Claude Sonnet 5",
+                      "google/gemini-3.5-flash" = "Gemini 3.5 Flash",
+                      "openai/gpt-5.4" = "GPT-5.4",
+                      "moonshotai/kimi-k2.6" = "Kimi K2.6",
+                      "xiaomi/mimo-v2.5" = "MiMo V2.5",
+                      "minimax/minimax-m3" = "MiniMax M3",
+                      "qwen/qwen3.7-plus" = "Qwen3.7-plus")
+
+# retained calls (complete set of valid ratings) and planned calls (decks x 7
+# models x 3 repetitions) per questionnaire and deck set
+llm_calls_retained <- c(nrow(distinct(llm_flu, file, model, rep)), nrow(distinct(llm_qua, file, model, rep)),
+                        nrow(distinct(llm_vis, file, model, rep)), nrow(distinct(llm_flu_mc, file, model, rep)),
+                        nrow(distinct(llm_qua_mc, file, model, rep)), nrow(distinct(llm_vis_mc, file, model, rep)),
+                        nrow(distinct(llm_flu_notext, file, model, rep)), nrow(distinct(llm_qua_nodesign, file, model, rep)))
+llm_calls_planned <- c(n_distinct(llm_flu$file), n_distinct(llm_qua$file), n_distinct(llm_vis$file),
+                       n_distinct(llm_flu_mc$file), n_distinct(llm_qua_mc$file), n_distinct(llm_vis_mc$file),
+                       n_distinct(llm_flu_notext$file), n_distinct(llm_qua_nodesign$file)) * 7 * 3
+llm_calls_missing <- llm_calls_planned - llm_calls_retained
+
+# human questionnaire: visual fluency on the visual items and substantive
+# quality on the quality items
+llm_res_flu <- bind_rows(llm_contrast(llm_flu, "contrast", "fluency", "HF", "LF"),
+                         llm_contrast(llm_flu, "clear", "fluency", "HF", "LF"),
+                         llm_contrast(llm_flu, "symmetrical", "fluency", "HF", "LF"),
+                         llm_contrast(llm_flu, "simplicity", "fluency", "HF", "LF"),
+                         llm_contrast(llm_flu, "ease", "fluency", "HF", "LF"))
+llm_res_qua <- bind_rows(llm_contrast(llm_qua, "ip", "quality", "HQ", "LQ"),
+                         llm_contrast(llm_qua, "management", "quality", "HQ", "LQ"),
+                         llm_contrast(llm_qua, "commercialization", "quality", "HQ", "LQ"),
+                         llm_contrast(llm_qua, "legitimacy", "quality", "HQ", "LQ"),
+                         llm_contrast(llm_qua, "overall", "quality", "HQ", "LQ"))
+# cross-effects: substantive quality on the visual items and on processing ease,
+# visual fluency on the quality items and on the venture quality item
+llm_res_cross_qua <- bind_rows(llm_contrast(llm_flu, "contrast", "quality", "HQ", "LQ"),
+                               llm_contrast(llm_flu, "clear", "quality", "HQ", "LQ"),
+                               llm_contrast(llm_flu, "symmetrical", "quality", "HQ", "LQ"),
+                               llm_contrast(llm_flu, "simplicity", "quality", "HQ", "LQ"),
+                               llm_contrast(llm_flu, "ease", "quality", "HQ", "LQ"),
+                               llm_contrast(llm_qua, "ease", "quality", "HQ", "LQ"))
+llm_res_cross_flu <- bind_rows(llm_contrast(llm_qua, "ip", "fluency", "HF", "LF"),
+                               llm_contrast(llm_qua, "management", "fluency", "HF", "LF"),
+                               llm_contrast(llm_qua, "commercialization", "fluency", "HF", "LF"),
+                               llm_contrast(llm_qua, "legitimacy", "fluency", "HF", "LF"),
+                               llm_contrast(llm_qua, "overall", "fluency", "HF", "LF"),
+                               llm_contrast(llm_flu, "potential", "fluency", "HF", "LF"))
+
+# comparison with the human manipulation checks (single-factor decks): condition
+# means of the human participants and of the models, pooled across both startups
+llm_human <- data.frame(
+  high = c(mean(llm_mc_design$contrast[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_design$clarity[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_design$symmetry[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_design$simplicity[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_design$fluency[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_design$quality[llm_mc_design$fluency_condition == "high"]),
+           mean(llm_mc_quality$intell_prop[llm_mc_quality$quality_condition == "high"]),
+           mean(llm_mc_quality$hum_cap[llm_mc_quality$quality_condition == "high"]),
+           mean(llm_mc_quality$commerc[llm_mc_quality$quality_condition == "high"]),
+           mean(llm_mc_quality$legitim[llm_mc_quality$quality_condition == "high"]),
+           mean(llm_mc_quality$quality[llm_mc_quality$quality_condition == "high"]),
+           mean(llm_mc_quality$fluency[llm_mc_quality$quality_condition == "high"])),
+  low = c(mean(llm_mc_design$contrast[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_design$clarity[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_design$symmetry[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_design$simplicity[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_design$fluency[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_design$quality[llm_mc_design$fluency_condition == "low"]),
+          mean(llm_mc_quality$intell_prop[llm_mc_quality$quality_condition == "low"]),
+          mean(llm_mc_quality$hum_cap[llm_mc_quality$quality_condition == "low"]),
+          mean(llm_mc_quality$commerc[llm_mc_quality$quality_condition == "low"]),
+          mean(llm_mc_quality$legitim[llm_mc_quality$quality_condition == "low"]),
+          mean(llm_mc_quality$quality[llm_mc_quality$quality_condition == "low"]),
+          mean(llm_mc_quality$fluency[llm_mc_quality$quality_condition == "low"]))
+)
+llm_models <- data.frame(
+  high = c(mean(llm_flu_mc$rating[llm_flu_mc$item == "contrast" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_flu_mc$rating[llm_flu_mc$item == "clear" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_flu_mc$rating[llm_flu_mc$item == "symmetrical" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_flu_mc$rating[llm_flu_mc$item == "simplicity" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_flu_mc$rating[llm_flu_mc$item == "ease" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_flu_mc$rating[llm_flu_mc$item == "potential" & llm_flu_mc$fluency == "HF"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "ip" & llm_qua_mc$quality == "HQ"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "management" & llm_qua_mc$quality == "HQ"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "commercialization" & llm_qua_mc$quality == "HQ"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "legitimacy" & llm_qua_mc$quality == "HQ"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "overall" & llm_qua_mc$quality == "HQ"]),
+           mean(llm_qua_mc$rating[llm_qua_mc$item == "ease" & llm_qua_mc$quality == "HQ"])),
+  low = c(mean(llm_flu_mc$rating[llm_flu_mc$item == "contrast" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_flu_mc$rating[llm_flu_mc$item == "clear" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_flu_mc$rating[llm_flu_mc$item == "symmetrical" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_flu_mc$rating[llm_flu_mc$item == "simplicity" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_flu_mc$rating[llm_flu_mc$item == "ease" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_flu_mc$rating[llm_flu_mc$item == "potential" & llm_flu_mc$fluency == "LF"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "ip" & llm_qua_mc$quality == "LQ"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "management" & llm_qua_mc$quality == "LQ"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "commercialization" & llm_qua_mc$quality == "LQ"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "legitimacy" & llm_qua_mc$quality == "LQ"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "overall" & llm_qua_mc$quality == "LQ"]),
+          mean(llm_qua_mc$rating[llm_qua_mc$item == "ease" & llm_qua_mc$quality == "LQ"]))
+)
+llm_human$diff <- llm_human$high - llm_human$low
+llm_models$diff <- llm_models$high - llm_models$low
+
+# agreement between the seven models (pitch decks of Studies 3 and 4): mean of
+# the four visual items and mean of the five quality items
+llm_rel_flu <- llm_reliability(llm_flu, c("contrast", "clear", "symmetrical", "simplicity"))
+llm_rel_qua <- llm_reliability(llm_qua, c("ip", "management", "commercialization", "legitimacy", "overall"))
+
+# additional visual questions: visual fluency on the four visual items and the
+# venture potential item, substantive quality on the revised ease item
+llm_res_vis <- bind_rows(llm_contrast(llm_vis, "contrast", "fluency", "HF", "LF"),
+                         llm_contrast(llm_vis, "clear", "fluency", "HF", "LF"),
+                         llm_contrast(llm_vis, "symmetrical", "fluency", "HF", "LF"),
+                         llm_contrast(llm_vis, "simplicity", "fluency", "HF", "LF"))
+llm_vis_potential <- llm_contrast(llm_vis, "potential", "fluency", "HF", "LF")
+llm_vis_ease_quality <- llm_contrast(llm_vis, "ease", "quality", "HQ", "LQ")
+
+# removal checks: complete decks (same decks as the modified decks) vs. decks
+# without text (visual items, high quality decks) and decks in plain formatting
+# (quality items, high fluency decks)
+llm_flu_hq <- llm_flu |> filter(quality == "HQ")
+llm_qua_hf <- llm_qua |> filter(fluency == "HF")
+llm_removal_flu_full <- bind_rows(llm_contrast(llm_flu_hq, "contrast", "fluency", "HF", "LF"),
+                                  llm_contrast(llm_flu_hq, "clear", "fluency", "HF", "LF"),
+                                  llm_contrast(llm_flu_hq, "symmetrical", "fluency", "HF", "LF"),
+                                  llm_contrast(llm_flu_hq, "simplicity", "fluency", "HF", "LF"))
+llm_removal_flu <- bind_rows(llm_contrast(llm_flu_notext, "contrast", "fluency", "HF", "LF"),
+                             llm_contrast(llm_flu_notext, "clear", "fluency", "HF", "LF"),
+                             llm_contrast(llm_flu_notext, "symmetrical", "fluency", "HF", "LF"),
+                             llm_contrast(llm_flu_notext, "simplicity", "fluency", "HF", "LF"))
+llm_removal_qua_full <- bind_rows(llm_contrast(llm_qua_hf, "ip", "quality", "HQ", "LQ"),
+                                  llm_contrast(llm_qua_hf, "management", "quality", "HQ", "LQ"),
+                                  llm_contrast(llm_qua_hf, "commercialization", "quality", "HQ", "LQ"),
+                                  llm_contrast(llm_qua_hf, "legitimacy", "quality", "HQ", "LQ"),
+                                  llm_contrast(llm_qua_hf, "overall", "quality", "HQ", "LQ"))
+llm_removal_qua <- bind_rows(llm_contrast(llm_qua_nodesign, "ip", "quality", "HQ", "LQ"),
+                             llm_contrast(llm_qua_nodesign, "management", "quality", "HQ", "LQ"),
+                             llm_contrast(llm_qua_nodesign, "commercialization", "quality", "HQ", "LQ"),
+                             llm_contrast(llm_qua_nodesign, "legitimacy", "quality", "HQ", "LQ"),
+                             llm_contrast(llm_qua_nodesign, "overall", "quality", "HQ", "LQ"))
+# difference for the decks in plain formatting as a percentage of the difference
+# for the complete decks
+llm_retained_qua <- llm_removal_qua$estimate / llm_removal_qua_full$estimate * 100
+
+# substantive-quality scores (q-scores) of Studies 3 and 4 (AsPredicted
+# Preregistration #304145): mean of the perceived venture quality item per startup,
+# quality level, and model, then mean across the seven models, rescaled to 0-1
+llm_qscores <- llm_qua |> filter(item == "overall") |>
+  group_by(startup, quality, model) |> summarize(rating = mean(rating), .groups = "drop") |>
+  group_by(startup, quality) |> summarize(q = (mean(rating) - 1) / 6, models = n(), .groups = "drop")
+llm_qscores_wide <- llm_qscores |> tidyr::pivot_wider(id_cols = startup, names_from = quality, values_from = q)
+llm_qscores_wide$diff <- llm_qscores_wide$HQ - llm_qscores_wide$LQ
+```
+
+**Note: The following analysis was not preregistered.** For the pitch decks of Studies 3 and 4 (the four versions of each of the eight AI startups), we extended the manipulation checks with seven vision-capable large language models (LLMs) from different developers, accessed through OpenRouter: Claude Sonnet 5, GPT-5.4, Gemini 3.5 Flash, MiniMax M3, Qwen3.7-plus, MiMo V2.5, and Kimi K2.6. In each call, a model received all slides of one deck as images together with either the visual or the quality questionnaire of the human manipulation checks (same items and response scales) and returned a rating and a brief reference to supporting slide content for each item. Simplicity is the reverse-coded complexity rating. Each model rated each deck three times per questionnaire. The models also rated the `r n_distinct(llm_flu_mc$file) + n_distinct(llm_qua_mc$file)` single-factor decks of the manipulation checks for Studies 1 and 2, which allows a direct comparison with the human ratings. Across these questionnaires, the additional visual questions, and the removal checks (see @sec-validation-llm-additional), `r scales::comma(sum(llm_calls_retained))` of the `r scales::comma(sum(llm_calls_planned))` planned calls returned a complete set of valid ratings. The other `r sum(llm_calls_missing)` calls failed or returned incomplete ratings (decks of Studies 3 and 4 with the human visual questionnaire: `r llm_calls_missing[1]`, with the quality questionnaire: `r llm_calls_missing[2]`, with the additional visual questions: `r llm_calls_missing[3]`, and decks without text: `r llm_calls_missing[7]`).
+
+For each item and startup, we averaged the ratings across the models, the repetitions, and the two versions of the other manipulated factor, which gives a high and a low condition mean per startup. The difference between the conditions is the mean of the eight startup-level differences, reported with a percentile bootstrap 95% confidence interval (4,000 resamples of the startups), the paired standardized effect (Cohen's d<sub>z</sub>), and the p-value of an exact two-sided Wilcoxon signed-rank test. Thus, the startups are the units of analysis, and the repeated model ratings are not treated as independent observations. With eight startups, the smallest possible p-value of this test is `r weights::rd(2 / 2^8, 3)`, which results if the difference has the same sign for all eight startups. [Table A3, Panel A](#llm-table-A3a) reports the effects of each manipulation on the items it targeted, and [Panel B](#llm-table-A3b) its effects on the items of the other construct. For the single-factor decks, [Panel C](#llm-table-A3c) compares the condition means of the models with those of the human participants, both pooled across the software and the healthcare startup. The reliability of the ratings of the 32 decks of Studies 3 and 4 ([Panel D](#llm-table-A3d)) is based on the mean of the four visual items and the mean of the five quality items per deck and model. ICC(2,1) is the reliability of a single model and ICC(2,7) that of the average of the seven models (two-way random effects, absolute agreement). The weighted κ is the quadratic-weighted Cohen's κ between two models, averaged across the 21 pairs of models and across the items (per item, a model's three ratings of a deck were averaged and rounded). The 0–100 processing-ease item is not part of these means.
+
+*Results.* Across the eight AI startups, high-fluency decks received higher ratings of contrast, clarity, symmetry, simplicity, and processing ease (all `r p_txt(max(llm_res_flu$p))`). Processing ease averaged `r f2(llm_res_flu$high[5])` for high-fluency and `r f2(llm_res_flu$low[5])` for low-fluency decks, a difference of `r f2(llm_res_flu$estimate[5])` points (95% CI `r ci_txt(llm_res_flu$lower[5], llm_res_flu$upper[5])`). High-quality decks received higher ratings on all four substantive dimensions and perceived venture quality (all `r p_txt(max(llm_res_qua$p))`). Perceived venture quality averaged `r f2(llm_res_qua$high[5])` versus `r f2(llm_res_qua$low[5])`, a difference of `r f2(llm_res_qua$estimate[5])` points (95% CI `r ci_txt(llm_res_qua$lower[5], llm_res_qua$upper[5])`). The effects on the ratings of the other construct were smaller: substantive quality changed the four visual ratings by `r f2(min(llm_res_cross_qua$estimate[1:4]))` to `r f2(max(llm_res_cross_qua$estimate[1:4]))` points, and visual fluency changed the five quality ratings by `r f2(min(llm_res_cross_flu$estimate[1:5]))` to `r f2(max(llm_res_cross_flu$estimate[1:5]))` points. In the visual questionnaire, the effect of visual fluency on the separate perceived venture quality item was `r f2(llm_res_cross_flu$estimate[6])` points (95% CI `r ci_txt(llm_res_cross_flu$lower[6], llm_res_cross_flu$upper[6])`, `r p_txt(llm_res_cross_flu$p[6])`). Substantive quality also increased the processing-ease ratings in the quality questionnaire by `r f2(llm_res_cross_qua$estimate[6])` points (95% CI `r ci_txt(llm_res_cross_qua$lower[6], llm_res_cross_qua$upper[6])`, `r p_txt(llm_res_cross_qua$p[6])`), so the models' processing-ease ratings responded to substantive content as well as to visual design.
+
+On the single-factor decks, the models, like the human participants, rated the high-fluency versions as easier to process and the high-quality versions as substantively stronger ([Table A3, Panel C](#llm-table-A3c)). The direction of the difference agreed in `r sum(sign(llm_human$diff) == sign(llm_models$diff))` of the `r nrow(llm_human)` comparisons, with the perceived venture quality item of the visual questionnaire as the exception, and the models' differences were mostly larger than the human participants'. The reliability of the seven-model average was `r weights::rd(llm_rel_flu$icc_k, 3)` for visual design and `r weights::rd(llm_rel_qua$icc_k, 3)` for substantive quality (ICC(2,7)). The corresponding single-model ICCs were `r weights::rd(llm_rel_flu$icc_1, 3)` and `r weights::rd(llm_rel_qua$icc_1, 3)`, and the mean pairwise weighted κ values were `r weights::rd(llm_rel_flu$kappa, 3)` and `r weights::rd(llm_rel_qua$kappa, 3)` ([Table A3, Panel D](#llm-table-A3d)).
+
+::: {#llm-table-A3a}
+```{r}
+#| label: validation-llm-table-A3a
+
+bind_rows(llm_res_flu, llm_res_qua) |>
+  mutate(Item = c("Contrast", "Clarity", "Symmetry", "Simplicity", "Processing ease",
+                  "Intellectual property", "Human capital", "Commercialization opportunity",
+                  "Organizational legitimacy", "Perceived venture quality"),
+         High = f2(high), Low = f2(low), Difference = f2(estimate), CI = ci_txt(lower, upper),
+         d = weights::rd(d, 2), p = p_tbl(p)) |>
+  select(Item, High, Low, Difference, CI, d, p) |>
+  kbl(col.names = c("Item", "High", "Low", "Difference", "95% CI", "d<sub>z</sub>", "p"),
+      caption = "Table A3, Panel A: LLM manipulation checks with the human questionnaire, targeted items",
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Mean rating" = 2, " " = 4)) |>
+  column_spec(c(1, 5), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Visual fluency (visual questionnaire)" = 5, "Substantive quality (quality questionnaire)" = 5),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#llm-table-A3b}
+```{r}
+#| label: validation-llm-table-A3b
+
+bind_rows(llm_res_cross_qua, llm_res_cross_flu) |>
+  mutate(Item = c("Contrast", "Clarity", "Symmetry", "Simplicity", "Processing ease", "Processing ease",
+                  "Intellectual property", "Human capital", "Commercialization opportunity",
+                  "Organizational legitimacy", "Perceived venture quality", "Perceived venture quality"),
+         Questionnaire = c(rep("Visual", 5), "Quality", rep("Quality", 5), "Visual"),
+         Difference = f2(estimate), CI = ci_txt(lower, upper), d = weights::rd(d, 2), p = p_tbl(p)) |>
+  select(Item, Questionnaire, Difference, CI, d, p) |>
+  kbl(col.names = c("Item", "Questionnaire", "Difference", "95% CI", "d<sub>z</sub>", "p"),
+      caption = "Table A3, Panel B: LLM manipulation checks with the human questionnaire, items of the other construct",
+      align = "llcccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 4), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Substantive quality (high minus low quality)" = 6, "Visual fluency (high minus low fluency)" = 6),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#llm-table-A3c}
+```{r}
+#| label: validation-llm-table-A3c
+
+data.frame(
+  Item = c("Contrast", "Clarity", "Symmetry", "Simplicity", "Processing ease", "Perceived venture quality",
+           "Intellectual property", "Human capital", "Commercialization opportunity",
+           "Organizational legitimacy", "Perceived venture quality", "Processing ease"),
+  human_high = f2(llm_human$high), human_low = f2(llm_human$low), human_diff = f2(llm_human$diff),
+  model_high = f2(llm_models$high), model_low = f2(llm_models$low), model_diff = f2(llm_models$diff),
+  same = ifelse(sign(llm_human$diff) == sign(llm_models$diff), "Yes", "No")
+) |>
+  kbl(col.names = c("Item", "High", "Low", "Diff.", "High", "Low", "Diff.", "Same sign"),
+      caption = "Table A3, Panel C: Comparison with the human manipulation checks (single-factor decks)",
+      align = "lccccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Human participants" = 3, "LLMs" = 3, " " = 1)) |>
+  column_spec(c(1, 8), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Visual fluency (visual questionnaire)" = 6, "Substantive quality (quality questionnaire)" = 6),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#llm-table-A3d}
+```{r}
+#| label: validation-llm-table-A3d
+
+bind_rows(llm_rel_flu, llm_rel_qua) |>
+  mutate(Scale = c("Visual design (four visual items)", "Substantive quality (five quality items)"),
+         icc_1 = weights::rd(icc_1, 3), icc_k = weights::rd(icc_k, 3), kappa = weights::rd(kappa, 3)) |>
+  select(Scale, decks, models, icc_1, icc_k, kappa) |>
+  kbl(col.names = c("Scale", "Decks", "Models", "ICC(2,1)", "ICC(2,7)", "Weighted κ"),
+      caption = "Table A3, Panel D: Reliability of the LLM ratings (pitch decks of Studies 3 and 4)",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Panels A, B, and D are based on the `r n_distinct(llm_flu$file)` pitch decks of Studies 3 and 4, Panel C on the `r n_distinct(llm_flu_mc$file) + n_distinct(llm_qua_mc$file)` single-factor decks of the manipulation checks. Processing ease was rated on a scale from 0–100, all other items on 1–7 scales. Simplicity is the reverse-coded complexity rating, and the intellectual-property item measured organizational capital. In Panels A and B, High and Low are the means of the eight startup-level condition means, differences are high minus low, confidence intervals are percentile bootstrap intervals (4,000 resamples of the startups), d<sub>z</sub> is the mean startup-level difference divided by its standard deviation, and p-values are from exact two-sided Wilcoxon signed-rank tests of the eight startup-level differences. In Panel C, the human ratings are those of the `r nrow(llm_mc_design)` participants of the two visual checks and the `r nrow(llm_mc_quality)` participants of the two quality checks, and all means are pooled across the software and the healthcare startup. In Panel D, the scale scores are the means of the items per deck and model. κ is not defined if two models gave all decks the same rating on an item, which was the case for `r llm_rel_flu$undefined` of the `r llm_rel_flu$pairs` combinations of model pairs and visual items (`r llm_rel_qua$undefined` of `r llm_rel_qua$pairs` for the quality items), and these combinations are not part of the averages.
+:::
+
+
+## Additional visual questions and removal checks {#sec-validation-llm-additional}
+
+**Note: The following analysis was not preregistered.** The models also rated the 32 decks of Studies 3 and 4 with a later questionnaire of more specific visual questions (labeled "specific visual items" in [Figure A6](#llm-figure-A6)): legibility of the text (clarity), color and tonal strength (contrast), left-right balance (symmetry), and clutter on the visual surface (simplicity), each on a 1–7 scale with described anchors, a revised ease question that focuses on taking in the deck visually (0–100), and the venture's potential judged from the substance alone. These questions form a separate instrument and do not replace the results using the human questionnaire. To assess what the ratings reflected, the models also rated two modified versions of the decks: the 16 high-quality decks with all readable text removed and the visual design kept (human visual questionnaire), and the 16 high-fluency decks in plain formatting with the text kept (quality questionnaire). Each comparison used the same complete decks as its baseline. All tests are those of [Table A3](#llm-table-A3a). The complete item results, the reliability of the later questions, and the matched contrasts of the removal checks are in the [LLM Ratings Reproducibility Report](Detailed_Report_2_LLM_Ratings.qmd).
+
+*Results.* With the later questions, high-fluency decks received higher ratings on all four visual features (differences from `r f2(min(llm_res_vis$estimate))` to `r f2(max(llm_res_vis$estimate))` points, all `r p_txt(max(llm_res_vis$p))`). The small venture-potential difference was also significant (`r f2(llm_vis_potential$estimate)` points, 95% CI `r ci_txt(llm_vis_potential$lower, llm_vis_potential$upper)`, `r p_txt(llm_vis_potential$p)`), and substantive quality increased the revised ease rating (`r f2(llm_vis_ease_quality$estimate)` points, 95% CI `r ci_txt(llm_vis_ease_quality$lower, llm_vis_ease_quality$upper)`, `r p_txt(llm_vis_ease_quality$p)`). After text removal, the differences in contrast (`r f2(llm_removal_flu$estimate[1])` points, `r p_txt(llm_removal_flu$p[1])`), clarity (`r f2(llm_removal_flu$estimate[2])`, `r p_txt(llm_removal_flu$p[2])`), and simplicity (`r f2(llm_removal_flu$estimate[4])`, `r p_txt(llm_removal_flu$p[4])`) remained significant, whereas the symmetry difference weakened from `r f2(llm_removal_flu_full$estimate[3])` points for the complete decks to `r f2(llm_removal_flu$estimate[3])` points and was no longer significant (95% CI `r ci_txt(llm_removal_flu$lower[3], llm_removal_flu$upper[3])`, `r p_txt(llm_removal_flu$p[3])`). With plain formatting, all five substantive-quality differences remained significant (all `r p_txt(max(llm_removal_qua$p))`) and were essentially unchanged in magnitude (`r sprintf('%.0f', min(llm_retained_qua))`% to `r sprintf('%.0f', max(llm_retained_qua))`% of the differences for the complete decks). [Figure A6](#llm-figure-A6) shows the ratings of each model, using the later visual questions and the quality questionnaire.
+
+::: {#llm-figure-A6}
+```{r}
+#| label: validation-llm-figure-A6
+#| fig-cap: "Figure A6: LLM ratings of the pitch decks of Studies 3 and 4 by model"
+#| fig-width: 12
+#| fig-asp: 0.8
+#| out-width: 100%
+
+# aesthetics
+#
+# colors of the high and the low condition: the main blue and a burnt orange as
+# its complementary color
+llm_col_high <- blue_main
+llm_col_low <- "#D4772C"
+
+# theme settings
+llm_theme <- theme(panel.grid.major.y = element_blank(),
+                   panel.grid.minor = element_blank(),
+                   plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0),
+                   strip.text = element_text(size = 11, hjust = .5),
+                   axis.title.x = element_text(size = 11, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+                   axis.text.y = element_text(size = 10.5),
+                   legend.position = "bottom")
+
+# data prep
+#
+# mean rating per model, startup, item, and condition (i.e., across the two
+# decks of a startup and condition and the three repetitions)
+llm_fig_vis <- llm_vis |>
+  filter(item %in% c("ease", "clear", "contrast", "symmetrical", "simplicity")) |>
+  group_by(model, startup, item, level = fluency) |>
+  summarize(rating = mean(rating), .groups = "drop")
+llm_fig_qua <- llm_qua |>
+  filter(item %in% c("overall", "commercialization", "ip", "management", "legitimacy")) |>
+  group_by(model, startup, item, level = quality) |>
+  summarize(rating = mean(rating), .groups = "drop")
+# labels
+llm_fig_vis$item <- factor(llm_fig_vis$item, levels = c("ease", "clear", "contrast", "symmetrical", "simplicity"),
+                           labels = c("Processing ease\n(0–100)", "Clarity", "Contrast", "Symmetry", "Simplicity"))
+llm_fig_qua$item <- factor(llm_fig_qua$item, levels = c("overall", "commercialization", "ip", "management", "legitimacy"),
+                           labels = c("Perceived venture quality", "Commercialization\nopportunity", "Intellectual\nproperty",
+                                      "Human capital", "Organizational\nlegitimacy"))
+llm_fig_vis$level <- factor(llm_fig_vis$level, levels = c("HF", "LF"), labels = c("High", "Low"))
+llm_fig_qua$level <- factor(llm_fig_qua$level, levels = c("HQ", "LQ"), labels = c("High", "Low"))
+# models in alphabetical order (from top to bottom)
+llm_fig_vis$model <- factor(llm_model_labels[llm_fig_vis$model], levels = rev(llm_model_labels))
+llm_fig_qua$model <- factor(llm_model_labels[llm_fig_qua$model], levels = rev(llm_model_labels))
+# means per model and condition
+llm_fig_vis |> group_by(model, item, level) |> summarize(rating = mean(rating), .groups = "drop") -> llm_fig_vis_means
+llm_fig_qua |> group_by(model, item, level) |> summarize(rating = mean(rating), .groups = "drop") -> llm_fig_qua_means
+# scale limits (processing ease: 0-100; all other items: 1-7)
+llm_fig_vis_limits <- data.frame(item = factor(rep(levels(llm_fig_vis$item), each = 2), levels = levels(llm_fig_vis$item)),
+                                 rating = c(0, 100, 1, 7, 1, 7, 1, 7, 1, 7), model = levels(llm_fig_vis$model)[1])
+
+# figure: visual fluency (specific visual items)
+llm_panel_1 <- ggplot(llm_fig_vis, aes(x = rating, y = model)) +
+  geom_blank(data = llm_fig_vis_limits) +
+  geom_point(aes(color = level), size = 1.6, alpha = .45,
+             position = position_jitter(width = 0, height = .15, seed = 42)) +
+  geom_point(data = llm_fig_vis_means, aes(fill = level), shape = 23, size = 3, color = "gray15", stroke = .4) +
+  facet_wrap(vars(item), nrow = 1, scales = "free_x") +
+  scale_x_continuous(breaks = function(lim) if(lim[2] > 10) c(0, 25, 50, 75, 100) else c(1, 3, 5, 7)) +
+  scale_color_manual(values = c("High" = llm_col_high, "Low" = llm_col_low), name = "Condition:",
+                     guide = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  scale_fill_manual(values = c("High" = llm_col_high, "Low" = llm_col_low), guide = "none") +
+  hrbrthemes::theme_ipsum_rc() + llm_theme +
+  labs(x = NULL, y = NULL,
+       title = "<b>Visual fluency manipulation</b> (specific visual items, high vs. low fluency)")
+
+# figure: substantive quality (quality items)
+llm_panel_2 <- ggplot(llm_fig_qua, aes(x = rating, y = model)) +
+  geom_point(aes(color = level), size = 1.6, alpha = .45,
+             position = position_jitter(width = 0, height = .15, seed = 42)) +
+  geom_point(data = llm_fig_qua_means, aes(fill = level), shape = 23, size = 3, color = "gray15", stroke = .4) +
+  facet_wrap(vars(item), nrow = 1) +
+  scale_x_continuous(limits = c(1, 7), breaks = c(1, 3, 5, 7)) +
+  scale_color_manual(values = c("High" = llm_col_high, "Low" = llm_col_low), name = "Condition:",
+                     guide = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  scale_fill_manual(values = c("High" = llm_col_high, "Low" = llm_col_low), guide = "none") +
+  hrbrthemes::theme_ipsum_rc() + llm_theme +
+  labs(x = "Rating", y = NULL,
+       title = "<b>Substantive quality manipulation</b> (quality items, high vs. low quality)")
+
+# final (combined) figure
+llm_panel_1 / llm_panel_2 + plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "<b>LLM ratings of the pitch decks of Studies 3 and 4 by model</b>",
+    subtitle = "High vs. low condition for each model and item",
+    caption = paste0("<i>Notes:</i><br>", "Small points represent the mean rating of a startup in a condition (two decks, three repetitions) for a model. ",
+                     "Diamonds represent the mean of the eight startups.<br>",
+                     "Processing ease on a 0–100 scale, all other items on 1–7 scales."),
+    # --Note: `theme` inside `plot_annotation`, so that the titles of the two
+    #         parts keep their (smaller) size
+    theme = theme(
+      plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+      plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+      plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+  ) & theme(legend.position = "bottom")
+```
+:::
+
+
+## Substantive-quality scores {#sec-validation-qscores}
+
+The [LLM Ratings Reproducibility Report](Detailed_Report_2_LLM_Ratings.qmd) lists the score of each startup and quality level.
+
+Studies 3 and 4 used a common substantive-quality score (q-score) to determine the performance bonuses. For each of the eight startups at each quality level, we averaged the perceived venture quality item of the quality questionnaire across both visual versions and the repetitions within each model (three per deck, two for three combinations of model and deck). We then averaged the seven model means and rescaled the result from the 1–7 scale to the range from 0 to 1, that is, q = (M − 1) / 6. This construction was preregistered for Study 3 (AsPredicted #304145), and Study 4 reused the same scores (AsPredicted #309446).
+
+*Results.* The `r nrow(llm_qscores)` scores ranged from `r weights::rd(min(llm_qscores$q), 3)` to `r weights::rd(max(llm_qscores$q), 3)`, and each is based on all `r min(llm_qscores$models)` models. Each startup's high-quality version had a higher score than its low-quality version (differences from `r weights::rd(min(llm_qscores_wide$diff), 3)` to `r weights::rd(max(llm_qscores_wide$diff), 3)`). Since each score averages across both visual versions, the high- and the low-fluency version of a deck received the same score, so the score rewarded identifying the stronger substantive case without a direct payoff advantage for visual design.

@@ -1,0 +1,421 @@
+# Benchmarking and Ecological Validity {#sec-benchmark}
+
+This section reproduces the benchmark results of the paper and Appendix B. The contrast, simplicity, and symmetry scores of the real pitch decks, the text-based quality ratings, the construction of the scores, and further analyses are documented in the [Deck Benchmarking Reproducibility Report](Detailed_Report_3_Benchmarking.qmd). **Note that the following analyses were not preregistered.**
+
+```{r}
+#| label: benchmark-analyses
+
+# Benchmark against real pitch decks (not preregistered)
+#
+# contrast, simplicity, and symmetry scores of the real pitch decks (means across
+# the slides of a deck)
+bm_bench <- readr::read_csv(here(raw_dir, 'Pitchdeck_Benchmarks.csv'))
+# text-based quality ratings of the real pitch decks: three prompt versions (a, b,
+# c) per dimension and model, model-level scores, and dimension scores
+bm_text <- readr::read_csv(here(raw_dir, 'Pitchdeck_Benchmarks_Text_Quality.csv'))
+# archived responses without a rating ("I cannot determine")
+bm_refusals <- readr::read_csv(here(raw_dir, 'Pitchdeck_Benchmarks_Text_Quality_Refusals.csv'))
+# contrast, simplicity, and symmetry scores of the 40 experimental pitch decks
+bm_decks <- readr::read_csv(here(raw_dir, 'Pitchdeck_Benchmarks_Experimental_Decks.csv'))
+# founder characteristics and venture outcomes (as recorded by the VC firm)
+bm_founders <- readr::read_csv(here(raw_dir, 'Pitchdeck_Benchmarks_Founders_Outcomes.csv'))
+
+# one row per real pitch deck
+bm_d <- bm_bench |> left_join(bm_text, by = "id")
+# image-based fluency score: mean of the standardized contrast, simplicity, and
+# symmetry scores
+bm_d$fluency_score <- (as.numeric(scale(bm_d$contrast)) + as.numeric(scale(bm_d$simplicity)) +
+                         as.numeric(scale(bm_d$symmetry))) / 3
+# text-based quality score: mean of the four standardized dimension scores
+# (i.e., without overall quality)
+bm_d$quality_score <- (as.numeric(scale(bm_d$ip_score)) + as.numeric(scale(bm_d$hc_score)) +
+                         as.numeric(scale(bm_d$co_score)) + as.numeric(scale(bm_d$ol_score))) / 4
+
+# visual benchmark: percentile ranks of the experimental decks among the real
+# decks (percentage of real decks with a score at or below the score of the deck)
+bm_decks$contrast_pr <- ecdf(bm_bench$contrast)(bm_decks$contrast) * 100
+bm_decks$simplicity_pr <- ecdf(bm_bench$simplicity)(bm_decks$simplicity) * 100
+bm_decks$symmetry_pr <- ecdf(bm_bench$symmetry)(bm_decks$symmetry) * 100
+# median percentile ranks of the high and the low fluency versions
+bm_pr_hf <- c(contrast = median(bm_decks$contrast_pr[bm_decks$fluency == "HF"]),
+              simplicity = median(bm_decks$simplicity_pr[bm_decks$fluency == "HF"]),
+              symmetry = median(bm_decks$symmetry_pr[bm_decks$fluency == "HF"]))
+bm_pr_lf <- c(contrast = median(bm_decks$contrast_pr[bm_decks$fluency == "LF"]),
+              simplicity = median(bm_decks$simplicity_pr[bm_decks$fluency == "LF"]),
+              symmetry = median(bm_decks$symmetry_pr[bm_decks$fluency == "LF"]))
+# long format (one row per deck and measure)
+bm_decks_long <- bm_decks |>
+  tidyr::pivot_longer(c(contrast, simplicity, symmetry), names_to = "measure", values_to = "score") |>
+  mutate(pr = case_when(measure == "contrast" ~ contrast_pr,
+                        measure == "simplicity" ~ simplicity_pr,
+                        measure == "symmetry" ~ symmetry_pr))
+
+# scoring consistency: agreement across the three prompt versions (ICC(2,1)) per
+# dimension and model
+bm_icc_qwen <- c(llm_icc(bm_d[, c("ip_a_qwen", "ip_b_qwen", "ip_c_qwen")])[["icc_1"]],
+                 llm_icc(bm_d[, c("hc_a_qwen", "hc_b_qwen", "hc_c_qwen")])[["icc_1"]],
+                 llm_icc(bm_d[, c("co_a_qwen", "co_b_qwen", "co_c_qwen")])[["icc_1"]],
+                 llm_icc(bm_d[, c("ol_a_qwen", "ol_b_qwen", "ol_c_qwen")])[["icc_1"]],
+                 llm_icc(bm_d[, c("oq_a_qwen", "oq_b_qwen", "oq_c_qwen")])[["icc_1"]])
+bm_icc_mistral <- c(llm_icc(bm_d[, c("ip_a_mistral", "ip_b_mistral", "ip_c_mistral")])[["icc_1"]],
+                    llm_icc(bm_d[, c("hc_a_mistral", "hc_b_mistral", "hc_c_mistral")])[["icc_1"]],
+                    llm_icc(bm_d[, c("co_a_mistral", "co_b_mistral", "co_c_mistral")])[["icc_1"]],
+                    llm_icc(bm_d[, c("ol_a_mistral", "ol_b_mistral", "ol_c_mistral")])[["icc_1"]],
+                    llm_icc(bm_d[, c("oq_a_mistral", "oq_b_mistral", "oq_c_mistral")])[["icc_1"]])
+# agreement between the models (quadratic-weighted kappa of the rounded
+# model-level scores)
+bm_kappa <- c(irr::kappa2(cbind(round(bm_d$ip_score_qwen), round(bm_d$ip_score_mistral)), weight = "squared")$value,
+              irr::kappa2(cbind(round(bm_d$hc_score_qwen), round(bm_d$hc_score_mistral)), weight = "squared")$value,
+              irr::kappa2(cbind(round(bm_d$co_score_qwen), round(bm_d$co_score_mistral)), weight = "squared")$value,
+              irr::kappa2(cbind(round(bm_d$ol_score_qwen), round(bm_d$ol_score_mistral)), weight = "squared")$value,
+              irr::kappa2(cbind(round(bm_d$oq_score_qwen), round(bm_d$oq_score_mistral)), weight = "squared")$value)
+# prompt sensitivity: percentage of decks for which the three ratings of at least
+# one model differ by two or more points
+bm_flip <- c(mean(bm_prompt_range(bm_d, c("ip_a_qwen", "ip_b_qwen", "ip_c_qwen")) >= 2 |
+                    bm_prompt_range(bm_d, c("ip_a_mistral", "ip_b_mistral", "ip_c_mistral")) >= 2),
+             mean(bm_prompt_range(bm_d, c("hc_a_qwen", "hc_b_qwen", "hc_c_qwen")) >= 2 |
+                    bm_prompt_range(bm_d, c("hc_a_mistral", "hc_b_mistral", "hc_c_mistral")) >= 2),
+             mean(bm_prompt_range(bm_d, c("co_a_qwen", "co_b_qwen", "co_c_qwen")) >= 2 |
+                    bm_prompt_range(bm_d, c("co_a_mistral", "co_b_mistral", "co_c_mistral")) >= 2),
+             mean(bm_prompt_range(bm_d, c("ol_a_qwen", "ol_b_qwen", "ol_c_qwen")) >= 2 |
+                    bm_prompt_range(bm_d, c("ol_a_mistral", "ol_b_mistral", "ol_c_mistral")) >= 2),
+             mean(bm_prompt_range(bm_d, c("oq_a_qwen", "oq_b_qwen", "oq_c_qwen")) >= 2 |
+                    bm_prompt_range(bm_d, c("oq_a_mistral", "oq_b_mistral", "oq_c_mistral")) >= 2)) * 100
+
+# relationship between fluency and quality: correlation of the two scores, of
+# the three visual features with the four dimension scores, and of the fluency
+# score with the rated human capital
+bm_r_scores <- bm_cor(bm_d$fluency_score, bm_d$quality_score)
+bm_r_features <- cor(bm_d[, c("contrast", "simplicity", "symmetry")], bm_d[, c("ip_score", "hc_score", "co_score", "ol_score")])
+bm_r_hc <- bm_cor(bm_d$fluency_score, bm_d$hc_score)
+# top-quality decks (highest quartile of the text-based quality score) and
+# fluency groups (quartiles, deciles, and median split of the fluency score)
+bm_d$quality_top <- bm_d$quality_score >= quantile(bm_d$quality_score, .75)
+bm_d$fluency_quartile <- cut(bm_d$fluency_score, quantile(bm_d$fluency_score, 0:4 / 4),
+                             include.lowest = TRUE, labels = FALSE)
+bm_d$fluency_decile <- cut(bm_d$fluency_score, quantile(bm_d$fluency_score, 0:10 / 10),
+                           include.lowest = TRUE, labels = FALSE)
+bm_d$fluency_below_median <- bm_d$fluency_score < median(bm_d$fluency_score)
+# decks, mean quality score (standardized across all decks), and top-quality
+# decks per fluency quartile
+bm_quartiles <- bm_d |>
+  mutate(quality_z = as.numeric(scale(quality_score))) |>
+  group_by(fluency_quartile) |>
+  summarize(N = n(), mean_quality = mean(quality_z), top = sum(quality_top), .groups = "drop") |>
+  mutate(share = top / N * 100)
+
+# founder characteristics and venture outcomes
+bm_d <- bm_d |> left_join(bm_founders, by = "id")
+# prior funding raised (log-transformed, i.e., log(1 + x))
+bm_d$log_prior_funding <- log1p(bm_d$prior_funding_raised)
+
+# founder characteristics: linear regression of the fluency score
+bm_lm_founders <- lm(fluency_score ~ founder_prior_exit + serial_founder + log_prior_funding + num_slides, data = bm_d)
+bm_founders_coef <- coef(summary(bm_lm_founders))
+bm_founders_ci <- confint(bm_lm_founders)
+
+# venture outcomes: correlations with the fluency score and the quality score
+bm_r_outcomes <- bind_rows(bm_cor(bm_d$fluency_score, bm_d$followon_funding),
+                           bm_cor(bm_d$fluency_score, bm_d$survival),
+                           bm_cor(bm_d$fluency_score, bm_d$exit_ipo_acq),
+                           bm_cor(bm_d$quality_score, bm_d$followon_funding),
+                           bm_cor(bm_d$quality_score, bm_d$survival),
+                           bm_cor(bm_d$quality_score, bm_d$exit_ipo_acq))
+# joint logistic regressions (both scores and funding by the partner firm), with
+# 95% confidence intervals from the profile likelihood
+bm_glm_followon <- glm(followon_funding ~ fluency_score + quality_score + funded_by_partner, data = bm_d, family = binomial)
+bm_glm_survival <- glm(survival ~ fluency_score + quality_score + funded_by_partner, data = bm_d, family = binomial)
+bm_glm_exit <- glm(exit_ipo_acq ~ fluency_score + quality_score + funded_by_partner, data = bm_d, family = binomial)
+bm_glm_coef <- rbind(coef(summary(bm_glm_followon)), coef(summary(bm_glm_survival)), coef(summary(bm_glm_exit)))
+bm_glm_ci <- rbind(suppressMessages(confint(bm_glm_followon)), suppressMessages(confint(bm_glm_survival)),
+                   suppressMessages(confint(bm_glm_exit)))
+```
+
+
+## Visual benchmark {#sec-benchmark-visual}
+
+We compared the `r nrow(bm_decks)` experimental pitch decks (the `r sum(bm_decks$set == "Studies 1 and 2")` versions of the software and the healthcare startup of Studies 1 and 2 and the `r sum(bm_decks$set == "Studies 3 and 4")` versions of the eight AI startups of Studies 3 and 4) with `r scales::comma(nrow(bm_bench))` real pitch decks submitted to a European VC firm focused on seed-stage investment. To maintain confidentiality, the firm computed the contrast, simplicity, and symmetry of its decks with an R script that uses the *imagefluency* package (Mayer, [2024](https://imagefluency.com/)), and the same measures were computed for the experimental decks. The deck-level scores are the means across the slides of a deck. For each measure, the percentile rank of an experimental deck is the percentage of real decks with a score at or below its score, and we report the median percentile rank of the high- and the low-fluency versions.
+
+*Results.* All experimental decks lay within the observed ranges of the real decks on all three measures (contrast: `r bm_r(min(bm_bench$contrast))` to `r bm_r(max(bm_bench$contrast))`, simplicity: `r bm_r(min(bm_bench$simplicity))` to `r bm_r(max(bm_bench$simplicity))`, symmetry: `r bm_r(min(bm_bench$symmetry))` to `r bm_r(max(bm_bench$symmetry))`). The high-fluency versions had median percentile ranks of `r sprintf('%.1f', bm_pr_hf["contrast"])` (contrast), `r sprintf('%.1f', bm_pr_hf["simplicity"])` (simplicity), and `r sprintf('%.1f', bm_pr_hf["symmetry"])` (symmetry), and the low-fluency versions had medians of `r sprintf('%.1f', bm_pr_lf["contrast"])`, `r sprintf('%.1f', bm_pr_lf["simplicity"])`, and `r sprintf('%.1f', bm_pr_lf["symmetry"])`. [Figure B1](#bm-figure-B1) shows the positions of all experimental decks and the median of each fluency condition.
+
+::: {#bm-figure-B1}
+```{r}
+#| label: benchmark-figure-B1
+#| fig-cap: "Figure B1: Contrast, simplicity, and symmetry scores of the 40 experimental pitch decks compared with 3,510 real pitch decks"
+#| fig-width: 10
+#| fig-asp: 1.05
+#| out-width: 100%
+
+# aesthetics
+#
+# colors of high and low fluency: the main blue and a burnt orange as its
+# complementary color
+bm_col_high <- blue_main
+bm_col_low <- "#D4772C"
+
+# data prep
+#
+# long format of the real pitch decks
+bm_bench_long <- bm_bench |>
+  tidyr::pivot_longer(c(contrast, simplicity, symmetry), names_to = "measure", values_to = "score")
+bm_bench_long$measure <- factor(bm_bench_long$measure, levels = c("contrast", "simplicity", "symmetry"),
+                                labels = c("Contrast", "Simplicity", "Symmetry"))
+# mean of the real pitch decks
+bm_bench_long |> group_by(measure) |> summarize(score = mean(score)) -> bm_bench_mean
+# experimental pitch decks (rows: 1 = real decks, 2 = low fluency, 3 = high fluency)
+bm_decks_fig <- bm_decks_long
+bm_decks_fig$measure <- factor(bm_decks_fig$measure, levels = c("contrast", "simplicity", "symmetry"),
+                               labels = c("Contrast", "Simplicity", "Symmetry"))
+bm_decks_fig$row <- ifelse(bm_decks_fig$fluency == "HF", 3.3, 2.2)
+bm_decks_fig$level <- factor(bm_decks_fig$fluency, levels = c("HF", "LF"), labels = c("High", "Low"))
+bm_decks_fig$set <- factor(bm_decks_fig$set, levels = c("Studies 1 and 2", "Studies 3 and 4"),
+                           labels = c("Decks of Studies 1 and 2", "Decks of Studies 3 and 4"))
+# median score and percentile rank per measure and fluency version
+bm_decks_fig |> group_by(measure, row) |>
+  summarize(score = median(score), pr = median(pr), .groups = "drop") -> bm_decks_medians
+
+# plot
+ggplot() +
+  geom_violin(data = bm_bench_long, aes(x = score, y = 1), fill = "gray80", color = NA,
+              orientation = "y", width = .9) +
+  geom_segment(data = bm_bench_mean, aes(x = score, xend = score, y = .45, yend = 3.75),
+               color = "gray45", linetype = "dashed", linewidth = .5) +
+  geom_text(data = bm_bench_mean, aes(x = score, y = .35, label = "mean"), size = 3.3,
+            color = "gray25", fontface = "italic", family = "Roboto Condensed") +
+  geom_point(data = bm_decks_fig, aes(x = score, y = row, fill = level, shape = set), size = 2.6,
+             color = "gray15", stroke = .3, position = position_jitter(width = 0, height = .15, seed = 42)) +
+  geom_segment(data = bm_decks_medians, aes(x = score, xend = score, y = row - .3, yend = row + .3),
+               color = "black", linewidth = 1) +
+  geom_label(data = bm_decks_medians, aes(x = score, y = row + .5, label = paste0("median: p", sprintf('%.0f', pr))),
+             size = 3.3, family = "Roboto Condensed", color = "gray15", fill = "white", linewidth = 0,
+             label.padding = unit(.1, "lines")) +
+  facet_wrap(vars(measure), ncol = 1, scales = "free_x") +
+  scale_y_continuous(breaks = c(1, 2.2, 3.3), labels = c("Real pitch decks\n(3,510)", "Low fluency\nversions",
+                                                         "High fluency\nversions"),
+                     limits = c(.25, 3.95)) +
+  scale_fill_manual(values = c("High" = bm_col_high, "Low" = bm_col_low), guide = "none") +
+  scale_shape_manual(values = c(24, 21), name = NULL) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(size = 12, face = "bold", hjust = 0),
+        axis.text.y = element_text(size = 10.5),
+        legend.position = "top",
+        plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+        plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+        plot.caption.position = "plot",
+        plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0))) +
+  labs(x = NULL, y = NULL,
+       title = "<b>Experimental pitch decks in the benchmark</b>",
+       subtitle = "Contrast, simplicity, and symmetry compared with 3,510 real pitch decks",
+       caption = paste0("<i>Notes:</i><br>", "Gray areas represent the distribution of the real pitch decks, and dashed lines represent their means.<br>",
+                        "Points represent the 40 experimental pitch decks (20 per fluency version), and black lines represent their median scores<br>",
+                        "(labeled with the percentile rank among the real pitch decks)."))
+```
+:::
+
+
+## Text-based substantive-quality measurement {#sec-benchmark-quality}
+
+We assessed the substantive evidence in the same `r scales::comma(nrow(bm_d))` real decks separately from their visual design. The pipeline, which ran within the firm's environment, rendered the slides as images, extracted their text with GLM-OCR, and replaced company names, founder names, and locations with placeholders (spaCy). Two open-weight models from different developers, Qwen 3.5 and Mistral 3 Large, then rated the anonymized text on 1–7 scales whose anchors described the evidence associated with low, intermediate, and high ratings: organizational capital (documented intellectual property and certifications), human capital, commercialization opportunity, organizational legitimacy, and a separate overall quality item. Each model rated each dimension of each deck with three meaning-preserving versions of the prompt, which results in `r scales::comma(nrow(bm_d) * 5 * 3 * 2)` ratings (`r scales::comma(nrow(bm_d))` decks × 5 dimensions × 3 prompt versions × 2 models). Of these responses, `r nrow(bm_refusals)` (`r sprintf('%.1f', nrow(bm_refusals) / (nrow(bm_d) * 30) * 100)`%) did not contain a rating ("I cannot determine") and were replaced by the median of the available ratings of the same model, dimension, and prompt version. For each model and dimension, each prompt version was standardized across the decks, and the mean of the three standardized ratings was rescaled with the mean and the population standard deviation of all ratings of the model and dimension, bounded to the range from 1 to 7, and rounded to two decimals. The dimension score is the mean of the two model-level scores (rounded to two decimals), and the text-based quality score is the mean of the four standardized dimension scores (i.e., without overall quality). Correspondingly, the image-based fluency score is the mean of the standardized contrast, simplicity, and symmetry scores. [Table B1](#bm-table-B1) reports the scoring consistency for every dimension, including overall quality: the agreement across the three prompt versions (ICC(2,1), separately for each model), the agreement between the two models (quadratic-weighted Cohen's κ of their rounded model-level scores), and the prompt sensitivity (the percentage of decks for which the three ratings of at least one model differ by two or more points).
+
+*Results.* Agreement across the prompt versions ranged from `r bm_r(min(bm_icc_qwen, bm_icc_mistral))` to `r bm_r(max(bm_icc_qwen, bm_icc_mistral))`, and agreement between the models from `r bm_r(min(bm_kappa))` to `r bm_r(max(bm_kappa))`. The ratings of at least one model differed by two or more points across the prompt versions for `r sprintf('%.1f', bm_flip[1])`% of the decks for organizational capital, `r sprintf('%.1f', bm_flip[2])`% for human capital, `r sprintf('%.1f', bm_flip[3])`% for commercialization opportunity, `r sprintf('%.1f', bm_flip[4])`% for organizational legitimacy, and `r sprintf('%.1f', bm_flip[5])`% for overall quality. Thus, the ratings were generally consistent, while some assessments, in particular of organizational capital and commercialization opportunity, remained sensitive to the wording of the prompt.
+
+::: {#bm-table-B1}
+```{r}
+#| label: benchmark-table-B1
+
+data.frame(Dimension = c("Organizational capital", "Human capital", "Commercialization opportunity",
+                         "Organizational legitimacy", "Overall quality"),
+           icc_qwen = bm_r(bm_icc_qwen), icc_mistral = bm_r(bm_icc_mistral), kappa = bm_r(bm_kappa),
+           flip = paste0(sprintf('%.1f', bm_flip), "%")) |>
+  kbl(col.names = c("Dimension", "Qwen 3.5", "Mistral 3 Large", "Between models", "Prompt sensitivity"),
+      caption = "Table B1: Scoring consistency and prompt sensitivity", align = "lcccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "ICC(2,1) across prompts" = 2, "Weighted κ" = 1, " " = 1)) |>
+  column_spec(1:5, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Agreement across prompt versions is the ICC(2,1) of the three ratings per deck (two-way random effects, absolute agreement), separately for each model. Agreement between the models is the quadratic-weighted Cohen's κ of the two rounded model-level scores. Prompt sensitivity is the percentage of decks for which the three ratings of at least one model differ by two or more points. All values are based on the `r scales::comma(nrow(bm_d))` real pitch decks.
+:::
+:::
+
+
+## Relationship between visual fluency and substantive evidence {#sec-benchmark-orthogonality}
+
+We correlated the image-based fluency score with the text-based quality score and each of the three visual features with each of the four dimension scores (Pearson correlations). Top-quality decks are the `r sum(bm_d$quality_top)` decks in the highest quartile of the text-based quality score. [Figure B2](#bm-figure-B2) relates the two scores (left panel) and shows the distribution of all top-quality decks across the deciles of the fluency score (right panel, the bars add up to 100%). [Table B2](#bm-table-B2) reports, for each quartile of the fluency score, the mean text-based quality score (standardized across all decks) and the number and share of top-quality decks among the decks of the quartile.
+
+*Results.* The image-based fluency score was weakly positively correlated with the text-based quality score (*r* = `r bm_r(bm_r_scores$r)`, 95% CI `r bm_ci_r(bm_r_scores$lower, bm_r_scores$upper)`, `r p_txt(bm_r_scores$p)`), which corresponds to `r sprintf('%.1f', bm_r_scores$r^2 * 100)`% shared variance. Correlations between the individual visual features and the four quality dimensions ranged from `r bm_r(min(bm_r_features))` to `r bm_r(max(bm_r_features))`. Among the decks in the lowest fluency quartile, `r bm_quartiles$top[1]` of `r bm_quartiles$N[1]` (`r sprintf('%.1f', bm_quartiles$share[1])`%) were top-quality decks. The corresponding share in the highest fluency quartile was `r bm_quartiles$top[4]` of `r bm_quartiles$N[4]` (`r sprintf('%.1f', bm_quartiles$share[4])`%). Viewed from the other direction, `r sprintf('%.1f', mean(bm_d$fluency_below_median[bm_d$quality_top]) * 100)`% of the top-quality decks had fluency scores below the median of all decks ([Figure B2](#bm-figure-B2), right panel). Thus, highly rated substantive evidence frequently appeared in less fluent decks, while the two scores remained positively associated.
+
+::: {#bm-figure-B2}
+```{r}
+#| label: benchmark-figure-B2
+#| fig-cap: "Figure B2: Image-based fluency and text-based quality of 3,510 real pitch decks"
+#| fig-width: 12
+#| fig-asp: 0.45
+#| out-width: 100%
+
+# data prep
+#
+# share of all top quality decks per fluency decile (in %)
+bm_d |> filter(quality_top) |> count(fluency_decile) |>
+  mutate(share = n / sum(n) * 100,
+         below_median = factor(fluency_decile <= 5, levels = c(TRUE, FALSE),
+                               labels = c("Below the median", "Above the median"))) -> bm_deciles
+# correlation (for the label)
+bm_r_label <- paste0("r = ", weights::rd(cor(bm_d$fluency_score, bm_d$quality_score), 3), " [",
+                     weights::rd(cor.test(bm_d$fluency_score, bm_d$quality_score)$conf.int[1], 3), ", ",
+                     weights::rd(cor.test(bm_d$fluency_score, bm_d$quality_score)$conf.int[2], 3), "]")
+
+# figure: scatter plot
+bm_ortho_1 <- ggplot(bm_d, aes(x = fluency_score, y = quality_score)) +
+  geom_point(size = .9, alpha = .25, color = "gray45") +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, color = blue_main, linewidth = .8, linetype = "dashed") +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = blue_dark, fill = blue_light, linewidth = 1) +
+  annotate("label", x = min(bm_d$fluency_score), y = max(bm_d$quality_score), label = bm_r_label, hjust = 0, vjust = 1,
+           size = 4, color = "gray15", fill = "white", linewidth = 0, family = "Roboto Condensed") +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0),
+        axis.title.y = element_text(size = 11, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 11, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0))) +
+  labs(x = "Image-based fluency score", y = "Text-based quality score",
+       title = "<b>Fluency and quality</b> (all decks)")
+
+# figure: top quality decks per fluency decile
+bm_ortho_2 <- ggplot(bm_deciles, aes(x = factor(fluency_decile), y = share, fill = below_median)) +
+  geom_col(width = .8) +
+  geom_hline(yintercept = 10, linetype = "dashed", color = "gray45", linewidth = .5) +
+  # shares as labels inside the bars
+  geom_text(aes(y = 1, label = sprintf("%.1f%%", share), color = below_median), vjust = 0, size = 3.6,
+            family = "Roboto Condensed") +
+  annotate("text", x = .5, y = 10.3, label = "expected if unrelated (10%)", hjust = 0, vjust = 0, size = 3.5,
+           color = "gray45", family = "Roboto Condensed") +
+  # bracket over the deciles below the median
+  annotate("segment", x = .6, xend = 5.4, y = 13, yend = 13, color = "gray45", linewidth = .5) +
+  annotate("segment", x = c(.6, 5.4), xend = c(.6, 5.4), y = 13, yend = 12.5, color = "gray45", linewidth = .5) +
+  annotate("text", x = .6, y = 13.3, label = paste0("below the median: ", sprintf('%.1f', sum(bm_deciles$share[bm_deciles$fluency_decile <= 5])),
+                                                   "% of the top quality decks"),
+           hjust = 0, vjust = 0, size = 3.6, color = "gray25", family = "Roboto Condensed") +
+  scale_fill_manual(values = c("Below the median" = bm_col_low, "Above the median" = bm_col_high), name = "Fluency score:") +
+  scale_color_manual(values = c("Below the median" = "gray15", "Above the median" = "white"), guide = "none") +
+  scale_y_continuous(labels = scales::label_percent(scale = 1), limits = c(0, 16), expand = expansion(mult = c(0, 0))) +
+  hrbrthemes::theme_ipsum_rc() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "top",
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0),
+        axis.title.y = element_text(size = 11, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 11, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0))) +
+  labs(x = "Decile of the image-based fluency score (1 = lowest)", y = "Share of all top quality decks",
+       title = "<b>Top quality decks</b> by fluency decile")
+
+# final (combined) figure
+bm_ortho_1 + bm_ortho_2 + plot_layout(widths = c(1, 1.15)) +
+  plot_annotation(
+    title = "<b>Image-based fluency and text-based quality of real pitch decks</b>",
+    subtitle = "3,510 pitch decks submitted to a European VC firm",
+    caption = paste0("<i>Notes:</i><br>", "Left: solid line = linear regression with 95% confidence interval, dashed line = LOESS smoother. ",
+                     "Right: top quality decks = highest quartile of the<br>text-based quality score (n = ", sum(bm_d$quality_top),
+                     "). The bars add up to 100%, and ", sprintf('%.1f', mean(bm_d$fluency_below_median[bm_d$quality_top]) * 100),
+                     "% of the top quality decks have a fluency score below the median."),
+    theme = theme(
+      plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+      plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+      plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+  )
+```
+:::
+
+::: {#bm-table-B2}
+```{r}
+#| label: benchmark-table-B2
+
+bm_quartiles |>
+  mutate(quartile = c("1 (lowest fluency)", "2", "3", "4 (highest fluency)"),
+         N = scales::comma(N), mean_quality = sprintf('%.3f', mean_quality), share = sprintf('%.1f', share)) |>
+  select(quartile, N, mean_quality, top, share) |>
+  kbl(col.names = c("Fluency-score quartile", "N", "Mean quality score", "n", "%"),
+      caption = "Table B2: Substantive quality by fluency-score quartile", align = "lcccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 3, "Top-quality decks" = 2)) |>
+  column_spec(1:5, extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Quartile 1 has the lowest image-based fluency scores. Mean quality scores are text-based quality scores standardized across all `r scales::comma(nrow(bm_d))` decks. Top-quality decks are the decks in the highest quartile of the text-based quality score, and the percentages use the decks of each fluency quartile as the denominator.
+:::
+:::
+
+
+## Founder characteristics {#sec-benchmark-founders}
+
+We related the fluency score to the rated human-capital evidence (Pearson correlation) and regressed it on four characteristics that the VC firm recorded, in a linear regression (OLS): whether a founder had previously exited a venture (prior exit), serial-founder status, the prior funding raised (log-transformed, i.e., log(1 + x)), and the number of slides of the deck ([Table B3](#bm-table-B3)).
+
+*Results.* The correlation of the fluency score with the rated human-capital evidence was small (*r* = `r bm_r(bm_r_hc$r)`, 95% CI `r bm_ci_r(bm_r_hc$lower, bm_r_hc$upper)`). The four characteristics explained `r sprintf('%.1f', summary(bm_lm_founders)$adj.r.squared * 100)`% of the variation in the fluency score after adjustment for the number of predictors (adjusted *R*<sup>2</sup>). Serial-founder status was positively associated with the score (*b* = `r bm_f3(bm_founders_coef['serial_founder', 'Estimate'])`, `r p_txt(bm_founders_coef['serial_founder', 'Pr(>|t|)'])`), whereas a prior exit was negatively associated with it (*b* = `r bm_f3(bm_founders_coef['founder_prior_exit', 'Estimate'])`, `r p_txt(bm_founders_coef['founder_prior_exit', 'Pr(>|t|)'])`). Neither the prior funding nor the number of slides had a significant conditional association (`r p_txt(bm_founders_coef['log_prior_funding', 'Pr(>|t|)'])` and `r p_txt(bm_founders_coef['num_slides', 'Pr(>|t|)'])`).
+
+::: {#bm-table-B3}
+```{r}
+#| label: benchmark-table-B3
+
+data.frame(Predictor = c("Founder prior exit", "Serial founder", "Prior funding raised (log)", "Number of slides"),
+           b = bm_f3(bm_founders_coef[-1, "Estimate"]), SE = bm_f3(bm_founders_coef[-1, "Std. Error"]),
+           CI = bm_ci3(bm_founders_ci[-1, 1], bm_founders_ci[-1, 2]), p = p_tbl(bm_founders_coef[-1, "Pr(>|t|)"])) |>
+  kbl(col.names = c("Predictor", "b", "SE", "95% CI", "p"), row.names = FALSE,
+      caption = "Table B3: Founder characteristics and visual fluency", align = "lcccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 4), extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Linear regression of the image-based fluency score (*N* = `r scales::comma(nobs(bm_lm_founders))`, adjusted *R*<sup>2</sup> = `r weights::rd(summary(bm_lm_founders)$adj.r.squared, 3)`). Prior funding raised is log-transformed, log(1 + x).
+:::
+:::
+
+
+## Venture outcomes {#sec-benchmark-outcomes}
+
+The VC firm also recorded whether a startup received follow-on funding, whether it survived, and whether it had an exit through an IPO or an acquisition, together with whether the partner firm had funded the startup. Follow-on funding is a separate outcome from funding by the partner firm. We correlated both scores with each outcome ([Table B4, Panel A](#bm-table-B4a)) and estimated one joint logistic regression per outcome with both scores and funding by the partner firm as predictors ([Panel B](#bm-table-B4b)), with 95% profile-likelihood confidence intervals.
+
+*Results.* Of the `r scales::comma(nrow(bm_d))` decks, `r sum(bm_d$funded_by_partner == 1)` were associated with funding by the partner firm and `r scales::comma(sum(bm_d$funded_by_partner == 0))` were not. Both scores were positively associated with all three outcomes. The correlations with follow-on funding, survival, and exit were `r bm_r(bm_r_outcomes$r[1])`, `r bm_r(bm_r_outcomes$r[2])`, and `r bm_r(bm_r_outcomes$r[3])` for the image-based fluency score and `r bm_r(bm_r_outcomes$r[4])`, `r bm_r(bm_r_outcomes$r[5])`, and `r bm_r(bm_r_outcomes$r[6])` for the text-based quality score (all `r p_txt(max(bm_r_outcomes$p))`). In the joint models, the fluency score remained positively associated with follow-on funding (*b* = `r bm_f3(coef(bm_glm_followon)[['fluency_score']])`), survival (*b* = `r bm_f3(coef(bm_glm_survival)[['fluency_score']])`), and exit (*b* = `r bm_f3(coef(bm_glm_exit)[['fluency_score']])`, all `r p_txt(max(bm_glm_coef[rownames(bm_glm_coef) == 'fluency_score', 'Pr(>|z|)']))`). The quality score retained a positive association with follow-on funding (*b* = `r bm_f3(coef(bm_glm_followon)[['quality_score']])`, `r p_txt(coef(summary(bm_glm_followon))['quality_score', 'Pr(>|z|)'])`), whereas its conditional associations with survival (*b* = `r bm_f3(coef(bm_glm_survival)[['quality_score']])`, `r p_txt(coef(summary(bm_glm_survival))['quality_score', 'Pr(>|z|)'])`) and exit (*b* = `r bm_f3(coef(bm_glm_exit)[['quality_score']])`, `r p_txt(coef(summary(bm_glm_exit))['quality_score', 'Pr(>|z|)'])`) were not significant.
+
+::: {#bm-table-B4a}
+```{r}
+#| label: benchmark-table-B4a
+
+data.frame(Outcome = c("Follow-on funding", "Survival", "Exit via IPO or acquisition"),
+           r_fluency = bm_r(bm_r_outcomes$r[1:3]), ci_fluency = bm_ci_r(bm_r_outcomes$lower[1:3], bm_r_outcomes$upper[1:3]),
+           p_fluency = p_tbl(bm_r_outcomes$p[1:3]),
+           r_quality = bm_r(bm_r_outcomes$r[4:6]), ci_quality = bm_ci_r(bm_r_outcomes$lower[4:6], bm_r_outcomes$upper[4:6]),
+           p_quality = p_tbl(bm_r_outcomes$p[4:6])) |>
+  kbl(col.names = c("Outcome", "r", "95% CI", "p", "r", "95% CI", "p"),
+      caption = "Table B4, Panel A: Correlations of visual fluency and substantive quality with venture outcomes",
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  add_header_above(c(" " = 1, "Image-based fluency score" = 3, "Text-based quality score" = 3)) |>
+  column_spec(c(1, 3, 6), extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {#bm-table-B4b}
+```{r}
+#| label: benchmark-table-B4b
+
+data.frame(Predictor = rep(c("Intercept", "Image-based fluency score", "Text-based quality score",
+                             "Funding by the partner firm"), 3),
+           b = bm_f3(bm_glm_coef[, "Estimate"]), SE = bm_f3(bm_glm_coef[, "Std. Error"]),
+           CI = bm_ci3(bm_glm_ci[, 1], bm_glm_ci[, 2]), p = p_tbl(bm_glm_coef[, "Pr(>|z|)"])) |>
+  kbl(col.names = c("Predictor", "b", "SE", "95% CI", "p"), row.names = FALSE,
+      caption = "Table B4, Panel B: Joint logistic regressions of venture outcomes", align = "lcccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 4), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Follow-on funding" = 4, "Survival" = 4, "Exit via IPO or acquisition" = 4),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* *N* = `r scales::comma(nobs(bm_glm_followon))` decks in each analysis. Panel A reports Pearson correlations with two-sided tests. Panel B reports the log-odds coefficients of one logistic regression per outcome, with profile-likelihood 95% confidence intervals and two-sided Wald tests. Funding by the partner firm is coded 1 if the partner firm funded the startup and 0 otherwise. These observational associations do not establish causality.
+:::
+:::

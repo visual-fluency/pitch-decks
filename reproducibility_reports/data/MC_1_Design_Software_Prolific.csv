@@ -1,0 +1,161 @@
+Age,Sex,Ethnicity simplified,Country of residence,Nationality,Employment status,ID
+30,Male,White,Canada,Canada,Full-Time,1
+27,Male,Mixed,Canada,Mexico,Part-Time,2
+35,Female,NA,United Kingdom,Korea,NA,3
+28,Male,White,Germany,United Kingdom,Full-Time,5
+33,Female,Mixed,France,France,"Not in paid work (e.g. homemaker', 'retired or disabled)",6
+25,Female,White,Germany,Italy,Full-Time,4
+40,Male,White,France,France,Full-Time,7
+27,Male,Black,France,Nigeria,Full-Time,24
+60,Male,White,Canada,Canada,Full-Time,13
+32,Female,White,United Kingdom,Poland,Part-Time,11
+36,Male,White,Germany,Germany,Part-Time,8
+32,Female,White,United Kingdom,United Kingdom,Part-Time,9
+46,Male,White,Israel,Israel,Full-Time,23
+31,Male,White,United Kingdom,United Kingdom,Full-Time,10
+30,Male,White,France,Spain,Full-Time,12
+51,Male,White,United Kingdom,United Kingdom,Full-Time,21
+54,Female,Black,United Kingdom,United Kingdom,Other,26
+49,Male,White,United Kingdom,United Kingdom,Full-Time,15
+58,Female,Asian,Canada,United States,NA,14
+26,Female,White,United Kingdom,United Kingdom,Full-Time,30
+54,Male,White,United Kingdom,United Kingdom,NA,62
+63,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",17
+69,Female,White,United Kingdom,United Kingdom,Other,37
+27,Female,White,United Kingdom,Ireland,NA,16
+59,Male,White,United Kingdom,United Kingdom,NA,27
+54,Male,White,United Kingdom,United Kingdom,Part-Time,28
+36,Male,White,Germany,Germany,NA,127
+67,Male,White,Israel,United States,Unemployed (and job seeking),53
+60,Male,Asian,United Kingdom,United Kingdom,NA,86
+38,Female,White,United Kingdom,United Kingdom,NA,20
+26,Female,White,Germany,United States,Part-Time,18
+61,Female,White,United Kingdom,United Kingdom,Other,25
+22,Male,Asian,United Kingdom,United Kingdom,Full-Time,41
+38,Male,White,Israel,Israel,Full-Time,55
+30,Female,White,Canada,Canada,Part-Time,32
+62,Female,White,United Kingdom,United Kingdom,Part-Time,43
+64,Female,White,United Kingdom,United Kingdom,Part-Time,31
+29,Female,White,United Kingdom,United Kingdom,NA,19
+61,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",61
+38,Male,Asian,Germany,India,Full-Time,22
+30,Male,White,France,France,Full-Time,45
+52,Female,White,United Kingdom,United Kingdom,Part-Time,34
+31,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",33
+39,Male,Asian,United States,United States,NA,29
+50,Male,White,United Kingdom,United Kingdom,Unemployed (and job seeking),66
+28,Male,Mixed,Germany,Germany,NA,48
+51,Female,White,United Kingdom,United Kingdom,Full-Time,60
+34,Male,White,France,France,NA,36
+24,Female,Mixed,United Kingdom,United Kingdom,Part-Time,42
+26,Female,White,United Kingdom,United Kingdom,Full-Time,38
+31,Female,White,United Kingdom,United Kingdom,Part-Time,46
+54,Female,White,France,France,Full-Time,65
+48,Female,White,United Kingdom,Poland,Full-Time,52
+46,Male,White,Israel,Israel,NA,70
+38,Female,White,United Kingdom,United Kingdom,Part-Time,111
+45,Female,White,United Kingdom,United Kingdom,Full-Time,88
+60,Male,White,United Kingdom,United Kingdom,NA,59
+36,Female,White,United Kingdom,United Kingdom,Part-Time,50
+30,Female,White,United Kingdom,United Kingdom,Full-Time,39
+32,Male,White,United Kingdom,United Kingdom,Unemployed (and job seeking),51
+33,Male,White,United Kingdom,United Kingdom,NA,35
+30,Male,White,United Kingdom,United Kingdom,Full-Time,58
+31,Male,White,Canada,Canada,NA,40
+24,Male,White,United Kingdom,United Kingdom,Full-Time,47
+41,Male,White,United Kingdom,United Kingdom,Full-Time,71
+26,Female,White,Israel,Israel,Unemployed (and job seeking),44
+21,Female,White,Canada,Canada,Full-Time,49
+27,Male,White,United Kingdom,United Kingdom,Full-Time,158
+30,Male,White,United Kingdom,United Kingdom,Full-Time,56
+69,Female,White,Israel,Israel,Part-Time,108
+47,Male,White,United States,United States,NA,54
+47,Female,Other,United Kingdom,Australia,NA,76
+38,Female,White,United Kingdom,United Kingdom,Full-Time,57
+45,Male,White,Germany,Germany,Full-Time,130
+24,Female,Asian,United Kingdom,United Kingdom,Full-Time,68
+38,Female,White,United Kingdom,Spain,NA,87
+40,Male,White,United Kingdom,United Kingdom,NA,89
+70,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",113
+40,Female,Mixed,Israel,Israel,Part-Time,159
+50,Male,White,United Kingdom,United Kingdom,NA,72
+31,Male,Asian,United Kingdom,India,Full-Time,84
+66,Female,White,United Kingdom,United Kingdom,Part-Time,82
+63,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",81
+NA,Male,White,United Kingdom,United Kingdom,NA,64
+65,Female,White,United Kingdom,Italy,Part-Time,115
+33,Male,White,United Kingdom,United Kingdom,Full-Time,63
+31,Male,White,United Kingdom,United Kingdom,Full-Time,146
+43,Male,Black,United Kingdom,United Kingdom,Part-Time,78
+66,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",75
+27,Male,White,United Kingdom,United Kingdom,Full-Time,123
+22,Male,White,France,France,NA,140
+64,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",69
+52,Male,White,United Kingdom,United Kingdom,NA,67
+69,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",126
+27,Female,White,United Kingdom,Italy,Full-Time,79
+76,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",83
+26,Male,Black,United Kingdom,Nigeria,Part-Time,120
+59,Male,White,United Kingdom,United Kingdom,Part-Time,122
+73,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",137
+34,Female,White,United Kingdom,United Kingdom,Full-Time,94
+40,Male,White,Canada,Canada,NA,99
+42,Female,White,France,France,Other,144
+27,Male,White,United Kingdom,United Kingdom,Full-Time,114
+36,Male,White,United Kingdom,United Kingdom,Full-Time,85
+34,Male,White,United Kingdom,United Kingdom,Full-Time,91
+32,Male,White,United Kingdom,United Kingdom,NA,95
+29,Male,White,United Kingdom,United Kingdom,Full-Time,73
+38,Male,Black,United Kingdom,Nigeria,NA,150
+39,Female,White,United Kingdom,United Kingdom,Full-Time,90
+62,Male,White,Canada,Canada,NA,136
+30,Male,Black,France,Nigeria,Due to start a new job within the next month,157
+58,Male,White,France,France,NA,77
+35,Female,White,United Kingdom,United Kingdom,NA,96
+49,Male,White,France,France,Full-Time,138
+54,Male,White,United Kingdom,United Kingdom,Part-Time,116
+30,Female,Black,United States,Nigeria,NA,125
+36,Male,White,United States,United States,NA,74
+23,Male,White,United Kingdom,United Kingdom,NA,117
+44,Female,Black,Canada,Canada,NA,97
+33,Female,White,United Kingdom,United Kingdom,Full-Time,103
+32,Male,Mixed,Canada,Canada,NA,112
+42,Female,White,United Kingdom,United Kingdom,Full-Time,92
+31,Female,White,United Kingdom,United Kingdom,NA,80
+42,Female,Mixed,United Kingdom,United Kingdom,Full-Time,139
+70,Male,White,Canada,United Kingdom,Unemployed (and job seeking),119
+30,Male,White,United Kingdom,Norway,Full-Time,98
+43,Male,Other,Canada,Canada,Full-Time,154
+40,Female,White,United Kingdom,United Kingdom,Part-Time,102
+42,Female,White,United Kingdom,United Kingdom,Part-Time,110
+31,Male,White,United Kingdom,United Kingdom,NA,93
+32,Male,Asian,Canada,Canada,Full-Time,101
+28,Female,White,Canada,Canada,Full-Time,152
+21,Male,White,United Kingdom,United Kingdom,Other,106
+29,Female,White,United Kingdom,United Kingdom,NA,156
+32,Female,White,Germany,Germany,NA,118
+36,Female,Black,United States,United States,Full-Time,148
+49,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",155
+41,Male,Mixed,United Kingdom,United Kingdom,NA,121
+36,Male,White,Canada,Canada,Full-Time,135
+63,Female,White,United Kingdom,United Kingdom,NA,134
+25,Female,Mixed,United Kingdom,United Kingdom,Full-Time,107
+44,Female,White,United Kingdom,United Kingdom,Full-Time,142
+25,Male,White,United Kingdom,United Kingdom,NA,105
+67,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",124
+71,Male,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",141
+55,Male,White,United Kingdom,United Kingdom,Full-Time,131
+36,Female,White,United Kingdom,Canada,Full-Time,109
+25,Male,Asian,United States,United States,Other,100
+49,Male,White,United Kingdom,France,Full-Time,143
+41,Male,White,United Kingdom,United Kingdom,NA,132
+66,Male,White,United Kingdom,United Kingdom,Full-Time,133
+26,Male,White,United Kingdom,United Kingdom,Full-Time,104
+42,Male,Asian,Canada,Canada,Full-Time,128
+66,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",151
+39,Male,White,United Kingdom,Italy,Full-Time,153
+20,Male,White,Canada,Canada,Due to start a new job within the next month,147
+45,Male,White,United States,United States,NA,145
+60,Female,White,United Kingdom,United Kingdom,"Not in paid work (e.g. homemaker', 'retired or disabled)",129
+61,Female,White,Canada,Canada,Other,149
+64,Male,White,United Kingdom,United Kingdom,NA,160

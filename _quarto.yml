@@ -1,0 +1,42 @@
+project:
+  type: website
+  output-dir: docs  
+
+website:
+  title: "Pitch Decks"
+  navbar:
+    left:
+      - icon: house-door-fill
+        text: Home
+        href: index.qmd
+      - href: reproducibility_reports/Reproducibility_Report.qmd
+        text: Reproducibility Report
+      - href: reproducibility_reports/Detailed_Report_1_MCs.qmd
+        text: Manipulation Checks
+      - href: reproducibility_reports/Detailed_Report_2_LLM_Ratings.qmd
+        text: LLM Ratings
+      - href: reproducibility_reports/Detailed_Report_3_Benchmarking.qmd
+        text: Deck Benchmarking
+      - href: reproducibility_reports/Detailed_Report_4_Field_Experiment.qmd
+        text: Study 1 (Field Experiment)
+      - href: reproducibility_reports/Detailed_Report_5_Investment_Evaluation.qmd
+        text: Studies 2A–2C (Investment Evaluation)
+      - href: reproducibility_reports/Detailed_Report_6_Attention_Investment.qmd
+        text: Study 3 (Attention and Investment)
+      - href: reproducibility_reports/Detailed_Report_7_Design_Disclosure.qmd
+        text: Study 4 (Design Disclosure)
+  page-footer:
+    background: light
+    left: "Copyright © 2026, *author names blinded for review*"
+    right:
+      - icon: github
+        href: https://github.com/visual-fluency/pitch-decks
+
+format:
+  html:
+    theme:
+      - journal
+      - custom.scss
+    css: styles.css
+    toc: true
+    page-layout: full

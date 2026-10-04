@@ -1,0 +1,384 @@
+# Study 3: Attention and Investment Allocation {#sec-study-3}
+
+This section reproduces the results of Study 3 and Appendix E. The data processing, exclusions, and further analyses are documented in the [Study 3: Attention and Investment Allocation Reproducibility Report](Detailed_Report_6_Attention_Investment.qmd). Allocations are measured in units of the 100-unit budget (attention tokens in the access task, units of investment capital in the evaluation task), so that one unit equals one percentage point of a participant's allocation.
+
+```{r}
+#| label: study-3-analyses
+
+# Study 3: Attention and Investment Allocation
+# AsPredicted Preregistration #304145
+#
+# processed data (one row per participant and one row per participant and deck)
+s3 <- readr::read_csv(here(processed_dir, 'Study_3.csv'))
+s3_long <- readr::read_csv(here(processed_dir, 'Study_3_long.csv'))
+# survey export: number of recorded and finished responses
+s3_raw <- readr::read_csv(here(raw_dir, 'Study_3_Qualtrics.csv'))
+s3_n <- c(recorded = nrow(s3_raw), finished = sum(s3_raw$Finished))
+
+# convert conditions into factors with effect coding (high = 1, low = -1)
+s3_long$ID <- as.factor(s3_long$ID)
+s3_long$venture <- as.factor(s3_long$venture)
+s3_long$stage <- as.factor(s3_long$stage)
+s3_long$fluency <- as.factor(s3_long$fluency)
+s3_long$quality <- as.factor(s3_long$quality)
+contrasts(s3_long$fluency) <- contr.sum
+contrasts(s3_long$quality) <- contr.sum
+
+# participants with four valid decks in the access task, in the evaluation
+# task, and in both tasks
+s3_ids_p1 <- s3$ID[!is.na(s3$fluency_contrast_p1)]
+s3_ids_p2 <- s3$ID[!is.na(s3$fluency_contrast_p2)]
+s3_ids_both <- s3$ID[!is.na(s3$stage_x_fluency_contrast)]
+
+# registered contrasts (one-sided tests, predicted direction: positive)
+s3_access_quality <- contrast_test(s3$quality_contrast_p1, alternative = "greater")
+s3_access_fluency <- contrast_test(s3$fluency_contrast_p1, alternative = "greater")
+s3_evaluation_quality <- contrast_test(s3$quality_contrast_p2, alternative = "greater")
+s3_stage_fluency <- contrast_test(s3$stage_x_fluency_contrast, alternative = "greater")
+# supportive estimate for the fluency contrast in the evaluation task, with the
+# Bayes factor against zero (Cauchy prior, r = 0.707)
+s3_evaluation_fluency <- contrast_test(s3$fluency_contrast_p2, alternative = "two.sided")
+s3_bf10 <- BayesFactor::extractBF(
+  BayesFactor::ttestBF(x = s3$fluency_contrast_p2[!is.na(s3$fluency_contrast_p2)], mu = 0, rscale = 0.707))$bf
+
+# condition means per task (participants with four valid decks in the task)
+s3_cells <- s3_long |>
+  filter((stage == "access" & ID %in% s3_ids_p1) | (stage == "evaluation" & ID %in% s3_ids_p2)) |>
+  group_by(stage, quality, fluency) |>
+  summarize(N = n(), Mean = mean(allocation), SD = sd(allocation), .groups = "drop")
+
+# repeated-measures ANOVAs (secondary tests)
+s3_anova_p1 <- afex::aov_ez(id = "ID", dv = "allocation", within = c("fluency", "quality"),
+                            data = filter(s3_long, stage == "access" & ID %in% s3_ids_p1))
+s3_anova_p2 <- afex::aov_ez(id = "ID", dv = "allocation", within = c("fluency", "quality"),
+                            data = filter(s3_long, stage == "evaluation" & ID %in% s3_ids_p2))
+s3_anova_both <- afex::aov_ez(id = "ID", dv = "allocation", within = c("stage", "fluency", "quality"),
+                              data = filter(s3_long, ID %in% s3_ids_both))
+s3_anova <- bind_rows(as.data.frame(anova(s3_anova_p1, correction = "none")),
+                      as.data.frame(anova(s3_anova_p2, correction = "none")),
+                      as.data.frame(anova(s3_anova_both, correction = "none")))
+
+# covariate model: stage x fluency contrast on centered age, investment
+# experience, and CVPA, and gender (male = 1, female = -1, other genders not
+# included); the intercept is tested one-sided
+s3_rob <- s3 |> filter(!is.na(stage_x_fluency_contrast))
+s3_rob$age_c <- scale(s3_rob$age, center = TRUE, scale = FALSE)
+s3_rob$invest_experience_c <- scale(s3_rob$invest_experience, center = TRUE, scale = FALSE)
+s3_rob$CVPA_c <- scale(s3_rob$CVPA, center = TRUE, scale = FALSE)
+s3_rob$gender_e <- NA
+s3_rob$gender_e[s3_rob$gender == "Male"] <- 1
+s3_rob$gender_e[s3_rob$gender == "Female"] <- -1
+s3_m_rob <- lm(stage_x_fluency_contrast ~ age_c + gender_e + invest_experience_c + CVPA_c, s3_rob)
+s3_rob_intercept <- data.frame(
+  N = nobs(s3_m_rob), estimate = coef(s3_m_rob)[["(Intercept)"]],
+  lower = confint(s3_m_rob)["(Intercept)", 1], upper = confint(s3_m_rob)["(Intercept)", 2],
+  p = pt(coef(summary(s3_m_rob))["(Intercept)", "t value"], df = s3_m_rob$df.residual, lower.tail = FALSE))
+
+# preregistered exploratory analysis: stage x fluency contrast on centered
+# fatigue (two-sided)
+s3_rob$fatigue_c <- scale(s3_rob$fatigue, center = TRUE, scale = FALSE)
+s3_m_fatigue <- lm(stage_x_fluency_contrast ~ fatigue_c, s3_rob)
+s3_fatigue <- data.frame(
+  N = nobs(s3_m_fatigue), estimate = coef(s3_m_fatigue)[["fatigue_c"]],
+  lower = confint(s3_m_fatigue)["fatigue_c", 1], upper = confint(s3_m_fatigue)["fatigue_c", 2],
+  p = coef(summary(s3_m_fatigue))["fatigue_c", "Pr(>|t|)"])
+
+# manipulation checks (both tasks pooled; random intercepts for participants
+# and startups): processing ease by visual fluency and perceived venture
+# quality by substantive quality (preregistered)
+s3_m_ease_fluency <- lmerTest::lmer(mc_ease ~ fluency + (1 | ID) + (1 | venture), s3_long)
+s3_m_quality_quality <- lmerTest::lmer(mc_quality ~ quality + (1 | ID) + (1 | venture), s3_long)
+s3_mc_ease_fluency <- lmer_diff(s3_m_ease_fluency, "fluency1")
+s3_mc_quality_quality <- lmer_diff(s3_m_quality_quality, "quality1")
+
+# exploratory (not preregistered): perceived venture quality by visual fluency
+s3_m_quality_fluency <- lmerTest::lmer(mc_quality ~ fluency + (1 | ID) + (1 | venture), s3_long)
+s3_quality_fluency <- lmer_diff(s3_m_quality_fluency, "fluency1")
+```
+
+
+## Sample {#sec-study-3-sample}
+
+Qualtrics recorded `r s3_n["recorded"]` responses, of which `r s3_n["finished"]` were finished. After the preregistered exclusions at the participant level, `r nrow(s3)` participants remained. The preregistered exclusions at the observation level (decks that were not loaded correctly, were viewed for less than 3 seconds or more than 30 minutes, or belonged to an allocation that did not add up to 100) affected `r sum(s3_long$invalid)` of the `r scales::comma(nrow(s3_long))` decks (`r sum(s3_long$invalid[s3_long$stage == "access"])` in the access task and `r sum(s3_long$invalid[s3_long$stage == "evaluation"])` in the evaluation task). The contrasts could therefore be computed for `r length(s3_ids_p1)` participants in the access task, `r length(s3_ids_p2)` in the evaluation task, and `r length(s3_ids_both)` in both tasks. The rating analyses use all decks of all participants. [Table E1](#s3-table-E1) describes the participants.
+
+::: {#s3-table-E1}
+```{r}
+#| label: study-3-table-E1
+
+s3_gender <- table(factor(s3$gender, levels = c("Male", "Female", "Other")))
+data.frame(
+  Characteristic = c("Age (years)", "Startup investment experience (years)", "Centrality of visual product aesthetics",
+                     "Gender", "Male", "Female", "Non-binary or prefer not to say"),
+  Value = c(paste0(f2(mean(s3$age, na.rm = TRUE)), " (", f2(sd(s3$age, na.rm = TRUE)), ")"),
+            paste0(f2(mean(s3$invest_experience, na.rm = TRUE)), " (", f2(sd(s3$invest_experience, na.rm = TRUE)), ")"),
+            paste0(f2(mean(s3$CVPA, na.rm = TRUE)), " (", f2(sd(s3$CVPA, na.rm = TRUE)), ")"),
+            "",
+            paste0(as.vector(s3_gender), " (", sprintf('%.1f', 100 * as.vector(s3_gender) / nrow(s3)), "%)"))
+) |>
+  kbl(col.names = c("Characteristic", paste0("Sample (<i>N</i> = ", nrow(s3), ")")),
+      caption = "Table E1: Participant characteristics, Study 3", align = "lr", escape = FALSE) |>
+  kable_styling() |>
+  row_spec(4, bold = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Continuous characteristics are reported as means (standard deviations), and gender categories are reported as counts (percentages).
+:::
+:::
+
+
+## Preregistered contrasts {#sec-study-3-contrasts}
+
+For each participant $i$ and task $s$, we computed a fluency contrast and a quality contrast from the allocations. The fluency contrast is
+
+$$
+\text{FC}_{is} = \frac{1}{2} \sum_{d \in \text{HF}_{is}} a_{id} - \frac{1}{2} \sum_{d \in \text{LF}_{is}} a_{id},
+$$
+
+where $a_{id}$ is the participant's allocation (in units) to deck $d$, and $\text{HF}_{is}$ and $\text{LF}_{is}$ are the two high and the two low fluency decks that the participant saw in this task. Since each of these two sets contains one high and one low quality deck, substantive quality is balanced out of the fluency contrast by construction. The quality contrast $\text{QC}_{is}$ is defined analogously (the two high minus the two low quality decks). Hypothesis 2 (H5 in the preregistration) predicts a larger fluency contrast in the access task than in the evaluation task and is tested with the task difference of the fluency contrasts,
+
+$$
+\text{TD}_{i} = \text{FC}_{i,\text{access}} - \text{FC}_{i,\text{evaluation}},
+$$
+
+which is labeled "Task difference" in [Table 4, Panel A](#s3-table-4a) and [Figure 2](#s3-figure-2) (the figure also shows the corresponding difference of the quality contrasts). The four preregistered one-sided tests (the quality contrasts in both tasks, the fluency contrast in the access task, and the task difference of the fluency contrasts) used α = .05 without adjustment. The fluency contrast in the evaluation task was preregistered as a supportive estimate, with its 95% confidence interval and the Bayes factor against zero. [Table 4, Panel A](#s3-table-4a) reports these contrasts and [Panel B](#s3-table-4b) the condition means. [Figure 2](#s3-figure-2) shows the results visually.
+
+*Results.* Visual fluency increased allocations in both tasks. High-fluency decks received on average `r f2(s3_access_fluency$estimate)` more attention tokens than low-fluency decks (95% CI `r ci_txt(s3_access_fluency$lower, s3_access_fluency$upper)`, one-sided `r p_txt(s3_access_fluency$p)`) and `r f2(s3_evaluation_fluency$estimate)` more units of investment capital (95% CI `r ci_txt(s3_evaluation_fluency$lower, s3_evaluation_fluency$upper)`, BF<sub>10</sub> = `r bf_fmt(s3_bf10)`). Higher substantive quality increased allocations by `r f2(s3_access_quality$estimate)` attention tokens (95% CI `r ci_txt(s3_access_quality$lower, s3_access_quality$upper)`) and by `r f2(s3_evaluation_quality$estimate)` units of investment capital (95% CI `r ci_txt(s3_evaluation_quality$lower, s3_evaluation_quality$upper)`, both one-sided `r p_txt(max(s3_access_quality$p, s3_evaluation_quality$p))`). The predicted larger fluency effect in the access task (Hypothesis 2) was not supported: the task difference of the fluency contrasts was `r f2(s3_stage_fluency$estimate)` (95% CI `r ci_txt(s3_stage_fluency$lower, s3_stage_fluency$upper)`, one-sided `r p_txt(s3_stage_fluency$p)`). The fluency × quality interactions, which were preregistered without a directional prediction, were not significant in either task (access task `r p_txt(anova(s3_anova_p1, correction = "none")["fluency:quality", "Pr(>F)"])`, evaluation task `r p_txt(anova(s3_anova_p2, correction = "none")["fluency:quality", "Pr(>F)"])`; see [Table E2, Panel A](#s3-table-E2a)).
+
+::: {#s3-table-4a}
+```{r}
+#| label: study-3-table-4a
+
+bind_rows(s3_access_quality, s3_access_fluency, s3_evaluation_quality, s3_evaluation_fluency, s3_stage_fluency) |>
+  mutate(Task = c("Access task", "Access task", "Evaluation task", "Evaluation task", "Task difference"),
+         Contrast = c("Substantive quality", "Visual fluency", "Substantive quality",
+                      "Visual fluency (supportive)", "Visual fluency (Hypothesis 2)"),
+         Estimate = f2(estimate), CI = ci_txt(lower, upper),
+         p = c(p_tbl(p[1:3]), "—", p_tbl(p[5])),
+         BF = c("—", "—", "—", bf_fmt(s3_bf10), "—")) |>
+  select(Task, Contrast, N, Estimate, CI, p, BF) |>
+  kbl(col.names = c("Task", "Contrast", "N", "Estimate", "95% CI", "p (one-sided)", "BF<sub>10</sub>"),
+      caption = "Table 4, Panel A: Preregistered contrasts, Study 3", align = "llccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 2, 5, 6, 7), extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {#s3-table-4b}
+```{r}
+#| label: study-3-table-4b
+
+s3_cells |>
+  mutate(stage = ifelse(stage == "access", "Access task", "Evaluation task"),
+         quality = ifelse(quality == "high", "High", "Low"),
+         fluency = ifelse(fluency == "high", "High", "Low")) |>
+  kbl(col.names = c("Task", "Quality", "Fluency", "N", "Mean", "SD"), digits = 2,
+      caption = "Table 4, Panel B: Condition means and standard deviations, Study 3", align = "lllccc") |>
+  kable_styling() |>
+  row_spec(4, extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top")
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Allocations use units of each 100-unit budget. Quality and fluency contrasts are high minus low, and the task difference is the access-task minus the evaluation-task contrast. Four directional tests were preregistered without adjustment across tests. The evaluation-task fluency estimate is supportive and uses a two-sided 95% confidence interval and BF<sub>10</sub> against the point null of zero (Cauchy prior, *r* = 0.707). Confidence intervals are two-sided.
+:::
+
+::: {#s3-figure-2}
+```{r}
+#| fig-cap: "Figure 2: Participant-level contrasts in the access and the evaluation task"
+#| fig-width: 10
+#| fig-asp: 0.6
+#| out-width: 100%
+
+# Helper function and aesthetics
+#
+# mean and 95% CI of a participant-level contrast, put together as a data frame
+contrast_ci <- function(x, panel, stage){
+  # remove missing values
+  x <- x[!is.na(x)]
+  # perform (two-sided) t-test
+  tres <- t.test(x, mu = 0)
+  # construct return df
+  return(data.frame(panel = panel, stage = stage, estimate = mean(x),
+                    lower = tres$conf.int[1], upper = tres$conf.int[2]))
+}
+# theme settings
+my_theme <- theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = .5),
+        axis.title.y = element_text(size = 12, hjust = .5, margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.title.x = element_text(size = 12, hjust = .5, margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        )
+
+# data prep
+#
+# participant-level fluency contrasts on the perceived quality ratings
+s3_rating <- s3 |> mutate(
+  fluency_contrast_rating_p1 = rowMeans(pick(mc_quality_p1_hq_hf, mc_quality_p1_lq_hf)) -
+                               rowMeans(pick(mc_quality_p1_hq_lf, mc_quality_p1_lq_lf)),
+  fluency_contrast_rating_p2 = rowMeans(pick(mc_quality_p2_hq_hf, mc_quality_p2_lq_hf)) -
+                               rowMeans(pick(mc_quality_p2_hq_lf, mc_quality_p2_lq_lf))
+)
+# means and 95% CIs of the contrasts on the allocation shares
+panels_alloc <- c("<b>Fluency contrast</b><br><span style='color:gray45'>(high minus low fluency)</span>",
+                  "<b>Quality contrast</b><br><span style='color:gray45'>(high minus low quality)</span>",
+                  "<b>Task difference</b><br><span style='color:gray45'>(access minus evaluation)</span>")
+d_ci_alloc <- bind_rows(
+  contrast_ci(s3$fluency_contrast_p1, panels_alloc[1], "Access\ntask"),
+  contrast_ci(s3$fluency_contrast_p2, panels_alloc[1], "Evaluation\ntask"),
+  contrast_ci(s3$quality_contrast_p1, panels_alloc[2], "Access\ntask"),
+  contrast_ci(s3$quality_contrast_p2, panels_alloc[2], "Evaluation\ntask"),
+  contrast_ci(s3$stage_x_fluency_contrast, panels_alloc[3], "Fluency\ncontrast"),
+  contrast_ci(s3$quality_contrast_p1 - s3$quality_contrast_p2, panels_alloc[3], "Quality\ncontrast")
+)
+d_ci_alloc$panel <- factor(d_ci_alloc$panel, levels = panels_alloc)
+d_ci_alloc$stage <- factor(d_ci_alloc$stage, levels = c("Access\ntask", "Evaluation\ntask",
+                                                        "Fluency\ncontrast", "Quality\ncontrast"))
+# means and 95% CIs of the fluency contrast on the perceived quality ratings
+d_ci_rating <- bind_rows(
+  contrast_ci(s3_rating$fluency_contrast_rating_p1, "<b>Fluency contrast</b><br><span style='color:gray45'>(high minus low fluency)</span>", "Access\ntask"),
+  contrast_ci(s3_rating$fluency_contrast_rating_p2, "<b>Fluency contrast</b><br><span style='color:gray45'>(high minus low fluency)</span>", "Evaluation\ntask")
+)
+
+# figure: allocation shares (common y-axis for the three panels)
+main_1 <- ggplot(d_ci_alloc, aes(x = stage, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(panel), ncol = 3, scales = "free_x") +
+  scale_x_discrete(expand = expansion(add = c(.5, .8))) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  theme(strip.text = element_markdown(size = 11, hjust = .5, lineheight = 1.2), strip.clip = "off", plot.title.position = "plot",
+        axis.text.x = element_text(size = 10.5),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0)) +
+  labs(x = NULL, y = "Contrast (units of the 100-unit budget)",
+       title = "<b>Allocation</b> (preregistered tests)")
+
+# figure: perceived quality ratings
+main_2 <- ggplot(d_ci_rating, aes(x = stage, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray45", linewidth = .4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1, linewidth = .9, color = blue_dark) +
+  geom_point(size = 3, color = blue_dark) +
+  geom_text(aes(label = sprintf("%.2f", estimate)), nudge_x = .14, hjust = 0, size = 3.8,
+            color = "gray25", family = "Roboto Condensed") +
+  facet_wrap(vars(panel)) +
+  scale_x_discrete(expand = expansion(add = c(.5, .8))) +
+  expand_limits(y = 0) +
+  hrbrthemes::theme_ipsum_rc() + my_theme +
+  theme(strip.text = element_markdown(size = 11, hjust = .5, lineheight = 1.2), strip.clip = "off", plot.title.position = "plot",
+        axis.text.x = element_text(size = 10.5),
+        plot.title = element_markdown(size = 13, family = "Roboto Condensed", face = "plain", hjust = 0)) +
+  labs(x = NULL, y = "Contrast (rating points, 1–7 scale)",
+       title = "<b>Perceived venture quality</b> (exploratory)")
+
+# final (combined) figure
+main_1 + main_2 + plot_layout(widths = c(3, 1.3)) +
+  plot_annotation(
+  title = "<b>Participant-level contrasts in the access and the evaluation task</b>",
+  subtitle = "Means and 95% confidence intervals (Study 3)",
+  caption = paste0("<i>Notes:</i><br>", "Contrast = mean of the two high-level decks minus mean of the two low-level decks. ",
+                   "Allocation: access task n = ", sum(!is.na(s3$fluency_contrast_p1)),
+                   "; evaluation task n = ", sum(!is.na(s3$fluency_contrast_p2)),
+                   "; task difference n = ", sum(!is.na(s3$stage_x_fluency_contrast)), ".<br>",
+                   "Perceived venture quality: ratings at the end of the experiment (n = ", nrow(s3), ")."),
+  # --Note: `theme` inside `plot_annotation`, so that the titles of the two
+  #         parts keep their (smaller) size
+  theme = theme(
+    plot.title = element_markdown(size = 18, family = "Roboto Condensed", face = "plain"),
+    plot.subtitle = element_text(size = 14, family = "Roboto Condensed"),
+    plot.caption.position = "plot", plot.caption = element_markdown(hjust = 0, lineheight = 1.2, family = "Roboto Condensed", size = 10, margin = margin(t = 7, r = 0, b = 0, l = 0)))
+)
+```
+:::
+
+
+## Secondary analyses {#sec-study-3-secondary}
+
+The preregistered secondary analyses comprised a 2 (visual fluency) × 2 (substantive quality) repeated-measures ANOVA for each task and a 2 (task) × 2 (visual fluency) × 2 (substantive quality) repeated-measures ANOVA for both tasks, based on the participants with four valid decks in the respective task ([Table E2, Panel A](#s3-table-E2a)). The task main effect is structurally zero because every participant allocated 100 units in each task, so it has no substantive interpretation. The preregistered covariate model regressed the task difference of the fluency contrasts on centered age, investment experience, and centrality of visual product aesthetics, and on gender (male = +1, female = −1; the `r sum(s3_rob$gender == "Other")` participants who chose another option are not included in this analysis). Its intercept is the covariate-adjusted task difference. A preregistered exploratory regression related the task difference to centered fatigue. [Table E2, Panel B](#s3-table-E2b) reports both analyses.
+
+*Results.* Visual fluency and substantive quality increased allocations in both tasks, without supporting the predicted larger fluency effect in the access task (task × fluency interaction, `r p_txt(anova(s3_anova_both, correction = "none")["stage:fluency", "Pr(>F)"])`). The fluency × quality interaction was not significant in either task or in the combined analysis, and neither was the three-way interaction (`r p_txt(anova(s3_anova_both, correction = "none")["stage:fluency:quality", "Pr(>F)"])`). The covariate-adjusted task difference did not support a larger fluency effect in the access task either (`r f2(s3_rob_intercept$estimate)`, 95% CI `r ci_txt(s3_rob_intercept$lower, s3_rob_intercept$upper)`, one-sided `r p_txt(s3_rob_intercept$p)`), and fatigue showed no significant association with the task difference (*b* = `r f2(s3_fatigue$estimate)`, 95% CI `r ci_txt(s3_fatigue$lower, s3_fatigue$upper)`, `r p_txt(s3_fatigue$p)`).
+
+::: {#s3-table-E2a}
+```{r}
+#| label: study-3-table-E2a
+
+data.frame(
+  Scope = c(rep("Access task", 3), rep("Evaluation task", 3), rep("Both tasks", 7)),
+  Effect = c("Fluency", "Quality", "Fluency × Quality",
+             "Fluency", "Quality", "Fluency × Quality",
+             "Task", "Fluency", "Quality", "Task × Fluency", "Task × Quality",
+             "Fluency × Quality", "Task × Fluency × Quality"),
+  N = c(rep(length(s3_ids_p1), 3), rep(length(s3_ids_p2), 3), rep(length(s3_ids_both), 7)),
+  df1 = s3_anova$`num Df`, df2 = s3_anova$`den Df`,
+  F = f2(s3_anova$F), p = p_tbl(s3_anova$`Pr(>F)`)
+) |>
+  mutate(F = ifelse(Effect == "Task", "—", F), p = ifelse(Effect == "Task", "—", p)) |>
+  select(-Scope) |>
+  kbl(col.names = c("Effect", "N", "df<sub>1</sub>", "df<sub>2</sub>", "F", "p"),
+      caption = "Table E2, Panel A: Preregistered repeated-measures ANOVAs, Study 3", align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Access task" = 3, "Evaluation task" = 3, "Both tasks" = 7),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+:::
+
+::: {#s3-table-E2b}
+```{r}
+#| label: study-3-table-E2b
+
+bind_rows(s3_rob_intercept, s3_fatigue) |>
+  mutate(Analysis = c("Covariate-adjusted task difference (intercept)", "Fatigue slope"),
+         Estimate = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p),
+         Test = c("one-sided", "two-sided")) |>
+  select(Analysis, N, Estimate, CI, p, Test) |>
+  kbl(col.names = c("Analysis", "N", "Estimate", "95% CI", "p", "Test"),
+      caption = "Table E2, Panel B: Covariate-adjusted task difference and fatigue regression, Study 3",
+      align = "lccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(4, extra_css = "white-space: nowrap;")
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Panel A uses two-sided F-tests. The task difference in Panel B is the fluency contrast in the access task minus the fluency contrast in the evaluation task. The task main effect in Panel A is structurally zero because each budget totals 100.
+:::
+
+
+## Manipulation checks {#sec-study-3-mc}
+
+The preregistered manipulation checks pooled the ratings of both tasks in mixed-effects models with random intercepts for participants and startups: processing ease by visual fluency and perceived venture quality by substantive quality ([Table E3](#s3-table-E3)).
+
+*Results.* High-fluency decks were easier to process (Δ = `r f2(s3_mc_ease_fluency$estimate)` on the 0–100 scale, 95% CI `r ci_txt(s3_mc_ease_fluency$lower, s3_mc_ease_fluency$upper)`, `r p_txt(s3_mc_ease_fluency$p)`), and higher substantive quality increased perceived venture quality (Δ = `r f2(s3_mc_quality_quality$estimate)` on the seven-point scale, 95% CI `r ci_txt(s3_mc_quality_quality$lower, s3_mc_quality_quality$upper)`, `r p_txt(s3_mc_quality_quality$p)`).
+
+::: {#s3-table-E3}
+```{r}
+#| label: study-3-table-E3
+
+bind_rows(s3_mc_ease_fluency, s3_mc_quality_quality) |>
+  mutate(Check = c("Processing ease by visual fluency", "Perceived venture quality by substantive quality"),
+         N = lme4::ngrps(s3_m_ease_fluency)[["ID"]],
+         Low = f2(c(mean(s3_long$mc_ease[s3_long$fluency == "low"]), mean(s3_long$mc_quality[s3_long$quality == "low"]))),
+         High = f2(c(mean(s3_long$mc_ease[s3_long$fluency == "high"]), mean(s3_long$mc_quality[s3_long$quality == "high"]))),
+         Difference = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Check, N, Low, High, Difference, CI, p) |>
+  kbl(col.names = c("Check", "N", "Low", "High", "Difference", "95% CI", "p"),
+      caption = "Table E3: Pooled manipulation checks, Study 3", align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(6, 7), extra_css = "white-space: nowrap;", include_thead = TRUE)
+```
+:::
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Each model pools both tasks and includes random intercepts for participants and startups (`r scales::comma(nobs(s3_m_ease_fluency))` ratings of `r lme4::ngrps(s3_m_ease_fluency)[["ID"]]` participants). Low and High are the observed means. Differences are model-based (high minus low), with two-sided tests and 95% confidence intervals (Satterthwaite's degrees of freedom). Both models were preregistered.
+:::
+
+
+## Exploratory analysis of the quality ratings {#sec-study-3-exploratory}
+
+**Note: The following analysis was not preregistered.** In a mixed-effects model with random intercepts for participants and startups, we tested whether visual fluency also affected perceived venture quality.
+
+*Results.* Visual fluency increased perceived venture quality (Δ = `r f2(s3_quality_fluency$estimate)`, 95% CI `r ci_txt(s3_quality_fluency$lower, s3_quality_fluency$upper)`, `r p_txt(s3_quality_fluency$p)`), an effect close to the `r f2(s3_mc_quality_quality$estimate)`-point effect of substantive quality. [Figure 2](#s3-figure-2) (right panel) and the [Study 3: Attention and Investment Allocation Reproducibility Report](Detailed_Report_6_Attention_Investment.qmd) show the participant-level contrasts of these ratings per task.

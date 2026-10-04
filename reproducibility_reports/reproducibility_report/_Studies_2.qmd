@@ -1,0 +1,324 @@
+# Studies 2A–2C: Investment Evaluation {#sec-study-2}
+
+This section reproduces the results of Studies 2A–2C and Appendix D. The data processing, exclusions, and further analyses are documented in the [Studies 2A–2C: Investment Evaluation Reproducibility Report](Detailed_Report_5_Investment_Evaluation.qmd). The dependent variable is investment likelihood, the stated probability of investing in the startup on a 0–100% scale, so that differences between conditions are in percentage points.
+
+```{r}
+#| label: studies-2-analyses
+
+# Study 2A: software startup, AsPredicted Preregistration #114380
+# Study 2B: software startup (replication), AsPredicted Preregistration #116872
+# Study 2C: healthcare startup, AsPredicted Preregistration #117215
+#
+# processed data (one row per participant)
+s2a <- readr::read_csv(here(processed_dir, 'Study_2A_Software.csv'))
+s2b <- readr::read_csv(here(processed_dir, 'Study_2B_Software_Replication.csv'))
+s2c <- readr::read_csv(here(processed_dir, 'Study_2C_Healthcare.csv'))
+# survey exports: number of recorded and finished responses
+s2a_raw <- readr::read_csv(here(raw_dir, 'Study_2A_Software_Qualtrics.csv'))
+s2b_raw <- readr::read_csv(here(raw_dir, 'Study_2B_Software_Replication_Qualtrics.csv'))
+s2c_raw <- readr::read_csv(here(raw_dir, 'Study_2C_Healthcare_Qualtrics.csv'))
+s2a_n <- c(recorded = nrow(s2a_raw), finished = sum(s2a_raw$Finished))
+s2b_n <- c(recorded = nrow(s2b_raw), finished = sum(s2b_raw$Finished))
+s2c_n <- c(recorded = nrow(s2c_raw), finished = sum(s2c_raw$Finished))
+
+# manipulation checks of Studies 2B and 2C: processing ease (0-100) and
+# perceived venture quality (1-7)
+s2b <- s2b |> rename(mc_ease = fluency, mc_quality = quality)
+s2c <- s2c |> rename(mc_ease = fluency, mc_quality = quality)
+
+# recode the CVPA items into numeric values and average the 11 items
+s2a <- s2a |> mutate_at(vars(cvpa_v_1:cvpa_r_3), dplyr::recode, 'Strongly disagree' = 1, 'Disagree' = 2,
+                        'Neither agree nor disagree' = 3, 'Agree' = 4, 'Strongly agree' = 5)
+s2a <- s2a |> rowwise() |> mutate(CVPA = mean(c_across(cvpa_v_1:cvpa_r_3))) |> ungroup()
+s2b <- s2b |> mutate_at(vars(cvpa_v_1:cvpa_r_3), dplyr::recode, 'Strongly disagree' = 1, 'Disagree' = 2,
+                        'Neither agree nor disagree' = 3, 'Agree' = 4, 'Strongly agree' = 5)
+s2b <- s2b |> rowwise() |> mutate(CVPA = mean(c_across(cvpa_v_1:cvpa_r_3))) |> ungroup()
+s2c <- s2c |> mutate_at(vars(cvpa_v_1:cvpa_r_3), dplyr::recode, 'Strongly disagree' = 1, 'Disagree' = 2,
+                        'Neither agree nor disagree' = 3, 'Agree' = 4, 'Strongly agree' = 5)
+s2c <- s2c |> rowwise() |> mutate(CVPA = mean(c_across(cvpa_v_1:cvpa_r_3))) |> ungroup()
+
+# group "Non-binary" and "Prefer not to say" into one gender category
+s2a$gender <- forcats::fct_collapse(s2a$gender, Female = "Female", Male = "Male", other_level = "Other")
+s2b$gender <- forcats::fct_collapse(s2b$gender, Female = "Female", Male = "Male", other_level = "Other")
+s2c$gender <- forcats::fct_collapse(s2c$gender, Female = "Female", Male = "Male", other_level = "Other")
+
+# convert conditions into factors with effect coding (high = 1, low = -1)
+s2a$fluency <- factor(s2a$fluency_condition, levels = c("high", "low"))
+s2a$quality <- factor(s2a$quality_condition, levels = c("high", "low"))
+contrasts(s2a$fluency) <- contr.sum
+contrasts(s2a$quality) <- contr.sum
+s2b$fluency <- factor(s2b$fluency_condition, levels = c("high", "low"))
+s2b$quality <- factor(s2b$quality_condition, levels = c("high", "low"))
+contrasts(s2b$fluency) <- contr.sum
+contrasts(s2b$quality) <- contr.sum
+s2c$fluency <- factor(s2c$fluency_condition, levels = c("high", "low"))
+s2c$quality <- factor(s2c$quality_condition, levels = c("high", "low"))
+contrasts(s2c$fluency) <- contr.sum
+contrasts(s2c$quality) <- contr.sum
+
+# preregistered two-factor ANOVAs (type III) and the high minus low contrasts
+# of the same models
+s2a_m <- lm(invest_prob ~ fluency * quality, s2a)
+s2a_anova <- anova_3(s2a_m)
+s2a_fluency <- lm_diff(s2a_m, "fluency1")
+s2a_quality <- lm_diff(s2a_m, "quality1")
+s2a_interaction <- lm_diff(s2a_m, "fluency1:quality1", multiplier = 4)
+s2b_m <- lm(invest_prob ~ fluency * quality, s2b)
+s2b_anova <- anova_3(s2b_m)
+s2b_fluency <- lm_diff(s2b_m, "fluency1")
+s2b_quality <- lm_diff(s2b_m, "quality1")
+s2b_interaction <- lm_diff(s2b_m, "fluency1:quality1", multiplier = 4)
+s2c_m <- lm(invest_prob ~ fluency * quality, s2c)
+s2c_anova <- anova_3(s2c_m)
+s2c_fluency <- lm_diff(s2c_m, "fluency1")
+s2c_quality <- lm_diff(s2c_m, "quality1")
+s2c_interaction <- lm_diff(s2c_m, "fluency1:quality1", multiplier = 4)
+
+# condition counts, means, and standard deviations
+s2a_cells <- s2a |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(invest_prob), SD = sd(invest_prob), .groups = "drop")
+s2b_cells <- s2b |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(invest_prob), SD = sd(invest_prob), .groups = "drop")
+s2c_cells <- s2c |> group_by(fluency, quality) |>
+  summarize(N = n(), Mean = mean(invest_prob), SD = sd(invest_prob), .groups = "drop")
+
+# Levene's tests of homogeneous group variances (preregistered condition for
+# the robust regression): by fluency, by quality, and by the four cells
+s2_levene <- c(
+  car::leveneTest(invest_prob ~ fluency, s2a)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ quality, s2a)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ fluency * quality, s2a)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ fluency, s2b)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ quality, s2b)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ fluency * quality, s2b)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ fluency, s2c)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ quality, s2c)$`Pr(>F)`[1],
+  car::leveneTest(invest_prob ~ fluency * quality, s2c)$`Pr(>F)`[1]
+)
+
+# preregistered covariate models: age, gender (reference: female), investment
+# experience, and CVPA added to the two factors and their interaction
+s2a_m_cov <- lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA, s2a)
+s2b_m_cov <- lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA, s2b)
+s2c_m_cov <- lm(invest_prob ~ fluency * quality + age + gender + invest_experience + CVPA, s2c)
+
+# manipulation checks, Studies 2B and 2C: t-tests of processing ease by visual
+# fluency and of perceived venture quality by substantive quality
+s2b_t_ease_fluency <- ttest_diff(mc_ease ~ fluency, s2b)
+s2b_t_mcq_quality <- ttest_diff(mc_quality ~ quality, s2b)
+s2c_t_ease_fluency <- ttest_diff(mc_ease ~ fluency, s2c)
+s2c_t_mcq_quality <- ttest_diff(mc_quality ~ quality, s2c)
+```
+
+
+## Sample {#sec-study-2-sample}
+
+Each study used a 2 (visual fluency: high vs. low) × 2 (substantive quality: high vs. low) between-subjects design. Studies 2A and 2B used the software startup's pitch deck, Study 2C the healthcare startup's pitch deck. Participants studied one randomly assigned deck on DocSend and then answered the survey in Qualtrics. Qualtrics recorded `r s2a_n["recorded"]` responses in Study 2A (`r s2a_n["finished"]` finished), `r s2b_n["recorded"]` in Study 2B (`r s2b_n["finished"]` finished), and `r s2c_n["recorded"]` in Study 2C (`r s2c_n["finished"]` finished). The preregistered exclusions removed participants without consent, with incomplete responses, with a reported Prolific ID that differed from the recorded one, with a repeated Prolific ID or IP address, who took more than 30 minutes for the survey, whose cumulative deck-viewing time was below 30 seconds or above 30 minutes, who viewed less than 50% of the slides, or who failed the attention or the comprehension check. A further exclusion, which was not preregistered, removed participants whose condition recorded in Qualtrics differed from the deck condition recorded by DocSend. The final samples comprised `r nrow(s2a)` participants in Study 2A, `r nrow(s2b)` in Study 2B, and `r nrow(s2c)` in Study 2C. [Table D1](#s2-table-D1) describes the participants.
+
+::: {#s2-table-D1}
+```{r}
+#| label: studies-2-table-D1
+
+s2a_gender <- table(factor(s2a$gender, levels = c("Male", "Female", "Other")))
+s2b_gender <- table(factor(s2b$gender, levels = c("Male", "Female", "Other")))
+s2c_gender <- table(factor(s2c$gender, levels = c("Male", "Female", "Other")))
+data.frame(
+  Characteristic = c("Age (years)", "Startup investment experience (years)",
+                     "Gender", "Male", "Female", "Non-binary or prefer not to say",
+                     "Ethnicity: White", "Country of residence: United States", "Employment: full-time"),
+  Study_2A = c(paste0(f2(mean(s2a$age)), " (", f2(sd(s2a$age)), ")"),
+               paste0(f2(mean(s2a$invest_experience)), " (", f2(sd(s2a$invest_experience)), ")"),
+               "",
+               paste0(as.vector(s2a_gender), " (", sprintf('%.1f', 100 * as.vector(s2a_gender) / nrow(s2a)), "%)"),
+               paste0(sum(s2a$ethnicity == "White", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2a$ethnicity == "White", na.rm = TRUE)), "%)"),
+               paste0(sum(s2a$country == "United States", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2a$country == "United States", na.rm = TRUE)), "%)"),
+               paste0(sum(s2a$employment == "Full-Time", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2a$employment == "Full-Time", na.rm = TRUE)), "%)")),
+  Study_2B = c(paste0(f2(mean(s2b$age)), " (", f2(sd(s2b$age)), ")"),
+               paste0(f2(mean(s2b$invest_experience)), " (", f2(sd(s2b$invest_experience)), ")"),
+               "",
+               paste0(as.vector(s2b_gender), " (", sprintf('%.1f', 100 * as.vector(s2b_gender) / nrow(s2b)), "%)"),
+               paste0(sum(s2b$ethnicity == "White", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2b$ethnicity == "White", na.rm = TRUE)), "%)"),
+               paste0(sum(s2b$country == "United States", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2b$country == "United States", na.rm = TRUE)), "%)"),
+               paste0(sum(s2b$employment == "Full-Time", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2b$employment == "Full-Time", na.rm = TRUE)), "%)")),
+  Study_2C = c(paste0(f2(mean(s2c$age)), " (", f2(sd(s2c$age)), ")"),
+               paste0(f2(mean(s2c$invest_experience)), " (", f2(sd(s2c$invest_experience)), ")"),
+               "",
+               paste0(as.vector(s2c_gender), " (", sprintf('%.1f', 100 * as.vector(s2c_gender) / nrow(s2c)), "%)"),
+               paste0(sum(s2c$ethnicity == "White", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2c$ethnicity == "White", na.rm = TRUE)), "%)"),
+               paste0(sum(s2c$country == "United States", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2c$country == "United States", na.rm = TRUE)), "%)"),
+               paste0(sum(s2c$employment == "Full-Time", na.rm = TRUE), " (",
+                      sprintf('%.1f', 100 * mean(s2c$employment == "Full-Time", na.rm = TRUE)), "%)"))
+) |>
+  kbl(col.names = c("Characteristic", paste0("Study 2A (<i>N</i> = ", nrow(s2a), ")"),
+                    paste0("Study 2B (<i>N</i> = ", nrow(s2b), ")"), paste0("Study 2C (<i>N</i> = ", nrow(s2c), ")")),
+      caption = "Table D1: Sample overview, Studies 2A–2C", align = "lrrr", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(1:4, extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  row_spec(3, bold = TRUE)
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Continuous characteristics are reported as means (standard deviations). Categories are reported as counts (percentages). Ethnicity, country of residence, and employment status are Prolific self-reports, and their percentages refer to the participants for whom Prolific provided this information. Studies 2A and 2B used the software startup's pitch deck, Study 2C the healthcare startup's pitch deck.
+:::
+:::
+
+
+## Preregistered analyses {#sec-study-2-anova}
+
+Each study preregistered a two-factor ANOVA of investment likelihood with visual fluency, substantive quality, and their interaction (α = .05), which we estimated with Type III sums of squares. Both factors were effect coded (low = −1, high = +1). The contrasts in [Table 3](#s2-table-3) are the differences between the high and the low condition in percentage points, estimated in the same factorial models as two times the effect-coded coefficient, so that they average equally over the two levels of the other factor. The interaction contrast, four times the interaction coefficient, is the fluency contrast under high substantive quality minus the fluency contrast under low substantive quality. All tests and 95% confidence intervals are two-sided. Study 2A preregistered positive effects of visual fluency and substantive quality and a test of the fluency × quality interaction without a directional prediction. Following Study 2A's fluency result, Studies 2B and 2C preregistered that visual fluency would not increase investment likelihood, together with a positive effect of substantive quality and no significant interaction. [Table 3](#s2-table-3) reports the contrasts, [Table D2](#s2-table-D2) the condition counts, means, and standard deviations, and [Table D3, Panel A](#s2-table-D3a) the ANOVAs.
+
+*Results.* Visual fluency did not significantly affect investment likelihood in any of the three studies (Study 2A: Δ = `r f2(s2a_fluency$estimate)` percentage points, 95% CI `r ci_txt(s2a_fluency$lower, s2a_fluency$upper)`, `r p_txt(s2a_fluency$p)`; Study 2B: Δ = `r f2(s2b_fluency$estimate)`, 95% CI `r ci_txt(s2b_fluency$lower, s2b_fluency$upper)`, `r p_txt(s2b_fluency$p)`; Study 2C: Δ = `r f2(s2c_fluency$estimate)`, 95% CI `r ci_txt(s2c_fluency$lower, s2c_fluency$upper)`, `r p_txt(s2c_fluency$p)`). Study 2A thus did not support its preregistered positive fluency effect. As preregistered, substantive quality significantly increased investment likelihood in all three studies, by `r f2(s2a_quality$estimate)` percentage points in Study 2A (`r p_txt(s2a_quality$p)`), `r f2(s2b_quality$estimate)` in Study 2B (`r p_txt(s2b_quality$p)`), and `r f2(s2c_quality$estimate)` in Study 2C (`r p_txt(s2c_quality$p)`). None of the fluency × quality interactions was significant (Study 2A `r p_txt(s2a_interaction$p)`, Study 2B `r p_txt(s2b_interaction$p)`, Study 2C `r p_txt(s2c_interaction$p)`).
+
+::: {#s2-table-3}
+```{r}
+#| label: studies-2-table-3
+
+data.frame(
+  Effect = rep(c("Visual fluency", "Substantive quality", "Fluency × Quality"), 3),
+  Prediction = c("Higher investment likelihood", "Higher investment likelihood", "No directional prediction",
+                 "No increase in investment likelihood", "Higher investment likelihood", "No significant interaction",
+                 "No increase in investment likelihood", "Higher investment likelihood", "No significant interaction"),
+  bind_rows(s2a_fluency, s2a_quality, s2a_interaction, s2b_fluency, s2b_quality, s2b_interaction,
+            s2c_fluency, s2c_quality, s2c_interaction)
+) |>
+  mutate(Estimate = f2(estimate), CI = ci_txt(lower, upper), p = p_tbl(p)) |>
+  select(Effect, Prediction, Estimate, CI, p) |>
+  kbl(col.names = c("Effect", "Preregistered prediction", "Contrast", "95% CI", "p"),
+      caption = "Table 3: Investment evaluation in Studies 2A–2C", align = "llccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 2, 4, 5), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = setNames(c(3, 3, 3),
+                             c(paste0("Study 2A: software startup (<i>N</i> = ", nrow(s2a), ")"),
+                               paste0("Study 2B: software startup (<i>N</i> = ", nrow(s2b), ")"),
+                               paste0("Study 2C: healthcare startup (<i>N</i> = ", nrow(s2c), ")"))),
+            label_row_css = "text-align: center;", escape = FALSE) |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Contrasts are high minus low in percentage points on the 0–100% investment-likelihood scale, averaging equally over the other factor’s two levels. The interaction contrast is the fluency contrast under high minus under low substantive quality (four times the coefficient). Estimates, two-sided 95% confidence intervals, and *p*-values come from the same factorial models.
+:::
+:::
+
+::: {#s2-table-D2}
+```{r}
+#| label: studies-2-table-D2
+
+bind_rows(list("Study 2A<br>(software startup)" = s2a_cells, "Study 2B<br>(software startup,<br>replication)" = s2b_cells,
+               "Study 2C<br>(healthcare startup)" = s2c_cells), .id = "Study") |>
+  mutate(fluency = ifelse(fluency == "high", "High", "Low"),
+         quality = ifelse(quality == "high", "High", "Low")) |>
+  kbl(col.names = c("Study", "Fluency", "Quality", "N", "Mean", "SD"), digits = 2,
+      caption = "Table D2: Condition counts, and investment likelihood means and standard deviations, Studies 2A–2C",
+      align = "lllccc", escape = FALSE) |>
+  kable_styling() |>
+  row_spec(c(4, 8), extra_css = "border-bottom: 1px solid") |>
+  collapse_rows(columns = 1, valign = "top")
+```
+:::
+
+::: {#s2-table-D3a}
+```{r}
+#| label: studies-2-table-D3a
+
+bind_rows(s2a_anova, s2b_anova, s2c_anova) |>
+  mutate(Effect = rep(c("Fluency", "Quality", "Fluency × Quality"), 3),
+         SS = f2(SS), F = f2(F), p = p_tbl(p), eta = ifelse(eta < .001, "&lt; .001", weights::rd(eta, 3))) |>
+  select(Effect, SS, df, df_res, F, p, eta) |>
+  kbl(col.names = c("Effect", "SS", "df", "df<sub>res</sub>", "F", "p", "η<sub>p</sub><sup>2</sup>"),
+      caption = "Table D3, Panel A: Preregistered ANOVAs of investment likelihood, Studies 2A–2C",
+      align = "lcccccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = c("Study 2A" = 3, "Study 2B" = 3, "Study 2C" = 3),
+            label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Two-factor ANOVAs with Type III sums of squares (SS) and effect coding (low = −1, high = +1). η<sub>p</sub><sup>2</sup> is the partial eta squared. Investment likelihood was measured on a scale from 0–100%.
+:::
+:::
+
+
+## Covariate models {#sec-study-2-covariates}
+
+The preregistered robustness regressions added age, gender, years of startup investment experience, and the centrality of visual product aesthetics (CVPA, the mean of the 11 items, each from 1 = strongly disagree to 5 = strongly agree) to the two effect-coded factors and their interaction ([Table D3, Panel B](#s2-table-D3b)). Gender was entered with female as the reference category, and the answers "Non-binary" and "Prefer not to say" were combined into the category "Other" (only in Study 2B, `r sum(s2b$gender == "Other")` participants). The preregistrations specified a robust regression instead if Levene's test indicated unequal group variances. We therefore tested investment likelihood across the fluency conditions, across the quality conditions, and across the four cells in each study (nine tests).
+
+*Results.* None of the nine Levene tests was significant (smallest `r p_txt(min(s2_levene))`), so the regressions were estimated with ordinary least squares. The covariates did not change the conclusions of the ANOVAs. The fluency coefficient was not significant in any study (Study 2A `r p_txt(coef(summary(s2a_m_cov))["fluency1", "Pr(>|t|)"])`, Study 2B `r p_txt(coef(summary(s2b_m_cov))["fluency1", "Pr(>|t|)"])`, Study 2C `r p_txt(coef(summary(s2c_m_cov))["fluency1", "Pr(>|t|)"])`), the quality coefficient was significant in all three studies (Study 2A `r p_txt(coef(summary(s2a_m_cov))["quality1", "Pr(>|t|)"])`, Study 2B `r p_txt(coef(summary(s2b_m_cov))["quality1", "Pr(>|t|)"])`, Study 2C `r p_txt(coef(summary(s2c_m_cov))["quality1", "Pr(>|t|)"])`), and the interaction in none. CVPA was positively associated with investment likelihood in all three studies (*b* = `r f2(coef(s2a_m_cov)[["CVPA"]])`, `r f2(coef(s2b_m_cov)[["CVPA"]])`, and `r f2(coef(s2c_m_cov)[["CVPA"]])` percentage points per scale point, all `r p_txt(max(coef(summary(s2a_m_cov))["CVPA", "Pr(>|t|)"], coef(summary(s2b_m_cov))["CVPA", "Pr(>|t|)"], coef(summary(s2c_m_cov))["CVPA", "Pr(>|t|)"]))`).
+
+::: {#s2-table-D3b}
+```{r}
+#| label: studies-2-table-D3b
+
+bind_rows(
+  lm_tbl(s2a_m_cov,
+         terms = c("(Intercept)", "fluency1", "quality1", "fluency1:quality1", "age", "genderMale",
+                   "invest_experience", "CVPA"),
+         labels = c("Intercept", "Fluency", "Quality", "Fluency × Quality", "Age", "Gender [Male]",
+                    "Investment experience", "CVPA")),
+  lm_tbl(s2b_m_cov,
+         terms = c("(Intercept)", "fluency1", "quality1", "fluency1:quality1", "age", "genderMale",
+                   "genderOther", "invest_experience", "CVPA"),
+         labels = c("Intercept", "Fluency", "Quality", "Fluency × Quality", "Age", "Gender [Male]",
+                    "Gender [Other]", "Investment experience", "CVPA")),
+  lm_tbl(s2c_m_cov,
+         terms = c("(Intercept)", "fluency1", "quality1", "fluency1:quality1", "age", "genderMale",
+                   "invest_experience", "CVPA"),
+         labels = c("Intercept", "Fluency", "Quality", "Fluency × Quality", "Age", "Gender [Male]",
+                    "Investment experience", "CVPA"))
+) |>
+  kbl(col.names = c("Term", "Coeff.", "SE", "t", "p"),
+      caption = "Table D3, Panel B: Preregistered covariate models of investment likelihood, Studies 2A–2C",
+      align = "lcccc", escape = FALSE) |>
+  kable_styling() |>
+  pack_rows(index = setNames(c(10, 11, 10),
+                             c(paste0("Study 2A (<i>N</i> = ", nobs(s2a_m_cov), ")"),
+                               paste0("Study 2B (<i>N</i> = ", nobs(s2b_m_cov), ")"),
+                               paste0("Study 2C (<i>N</i> = ", nobs(s2c_m_cov), ")"))),
+            label_row_css = "text-align: center;", escape = FALSE) |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Ordinary least squares regressions of investment likelihood (0–100%). Fluency and quality are effect coded (low = −1, high = +1). The reference category for gender is female. In the category "Other," the answers "Non-binary" and "Prefer not to say" are combined.
+:::
+:::
+
+
+## Manipulation checks {#sec-study-2-mc}
+
+Studies 2B and 2C measured two manipulation checks after investment likelihood (Study 2A had none): processing ease ("The process of studying this pitch deck was …", from 0 = difficult to 100 = easy, prefaced by "Irrespective of the content" in Study 2C) and perceived venture quality (the venture's potential to generate a sustainable competitive advantage and positive returns to the stakeholders, irrespective of the pitch deck's visual design, from 1 = very poor to 7 = excellent). In each study, t-tests compared processing ease between the visual fluency conditions and perceived venture quality between the substantive quality conditions ([Table D4](#s2-table-D4)). The t-tests used Student's or Welch's version, depending on Levene's test for equal variances (α = .05). All differences are high minus low, and all tests are two-sided. With the t-tests, we deviate from the preregistration of Study 2B, in which we erroneously wrote that we would run a two-factor ANOVA for the manipulation checks. We corrected this mistake in the preregistration of Study 2C.
+
+*Results.* High-fluency decks were easier to process in both studies (Study 2B: Δ = `r f2(s2b_t_ease_fluency$estimate)` points, 95% CI `r ci_txt(s2b_t_ease_fluency$lower, s2b_t_ease_fluency$upper)`, `r p_txt(s2b_t_ease_fluency$p)`; Study 2C: Δ = `r f2(s2c_t_ease_fluency$estimate)` points, 95% CI `r ci_txt(s2c_t_ease_fluency$lower, s2c_t_ease_fluency$upper)`, `r p_txt(s2c_t_ease_fluency$p)`), and high substantive quality increased perceived venture quality in both studies (Study 2B: Δ = `r f2(s2b_t_mcq_quality$estimate)`, 95% CI `r ci_txt(s2b_t_mcq_quality$lower, s2b_t_mcq_quality$upper)`, `r p_txt(s2b_t_mcq_quality$p)`; Study 2C: Δ = `r f2(s2c_t_mcq_quality$estimate)`, 95% CI `r ci_txt(s2c_t_mcq_quality$lower, s2c_t_mcq_quality$upper)`, `r p_txt(s2c_t_mcq_quality$p)`).
+
+::: {#s2-table-D4}
+```{r}
+#| label: studies-2-table-D4
+
+bind_rows(s2b_t_ease_fluency, s2b_t_mcq_quality, s2c_t_ease_fluency, s2c_t_mcq_quality) |>
+  mutate(Outcome = rep(c("Processing ease", "Perceived venture quality"), 2),
+         Factor = rep(c("Fluency", "Quality"), 2),
+         Low = f2(low), High = f2(high), Difference = f2(estimate), CI = ci_txt(lower, upper),
+         t = f2(t), df = ifelse(df == round(df), as.character(df), sprintf('%.1f', df)), p = p_tbl(p)) |>
+  select(Outcome, Factor, Low, High, Difference, CI, t, df, p) |>
+  kbl(col.names = c("Outcome", "Factor", "Low", "High", "Difference", "95% CI", "t", "df", "p"),
+      caption = "Table D4: Manipulation checks, Studies 2B and 2C",
+      align = "llccccccc", escape = FALSE) |>
+  kable_styling() |>
+  column_spec(c(1, 6), extra_css = "white-space: nowrap;", include_thead = TRUE) |>
+  pack_rows(index = c("Study 2B" = 2, "Study 2C" = 2), indent = FALSE, label_row_css = "text-align: center;") |>
+  repeat_header()
+```
+
+::: {.table-note style="font-size: 80%; text-align: left;"}
+*Notes:* Processing ease was measured from 0 (difficult) to 100 (easy), perceived venture quality from 1 (very poor) to 7 (excellent). Low and High are the observed means of the low and high condition of the factor. Differences are high minus low, with two-sided 95% confidence intervals and t-tests (Student's or Welch's version, depending on Levene's test, α = .05).
+:::
+:::
